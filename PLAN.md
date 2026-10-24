@@ -17,7 +17,7 @@
 
 | Critère | État |
 |---|---|
-| Tests unitaires des modules et serveurs | ✅ 41 + 33 + 37 + 19 + 24 + 40 = **194** (Windows ; 2.0.0 à revalider sous Linux) |
+| Tests unitaires des modules et serveurs | ✅ 41 + 33 + 37 + 19 + 24 + 40 = **194** (Windows et Linux) |
 | Tests d'intégration (8 serveurs + transport) | ✅ **118/118** |
 | `run_all.bat` / `run_all.sh` vert | ✅ **10/10 étapes** |
 | Robustesse / performances | ✅ **21/21** (T6.14 conditionnel à une clé Context7) |
@@ -27,7 +27,7 @@
 | Documentation README complète | ✅ (outils, transport, env, build, tests, config client) |
 | Release publiée | ⏳ v2.0.0 à publier |
 | Validation Windows | ✅ 2.0.0 (10/10, 194 unitaires, 21 robustesse/perf, 118 intégration) |
-| Validation Linux | ✅ version 1.0.0 (WSL2 Ubuntu 26.04) ; ⏳ version 2.0.0 à revalider |
+| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 194, 21, 118) |
 | Validation macOS | ⏳ à faire (prérequis : `curl`) |
 | Sécurité réseau | ✅ bind loopback, Origin, jeton optionnel, corps borné |
 

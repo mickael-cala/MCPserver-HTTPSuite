@@ -30,9 +30,9 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, ERRATA, CONTRIBUTING,
   SECURITY, CODE_OF_CONDUCT et modèles GitHub alignés sur
   **MCPserver-HTTPSuite** et le transport HTTP.
-- **Validation** : compilation et suite complète vertes sous **Windows**
-  (10/10, 194 unitaires, 21 robustesse/perf, 118 intégration). Validation
-  Linux/macOS de la version 2.0.0 à refaire.
+- **Validation** : compilation et suite complète vertes sous **Windows** et
+  **Linux (WSL2 Ubuntu 26.04)** (10/10, 194 unitaires, 21 robustesse/perf,
+  118 intégration). Validation macOS de la version 2.0.0 à faire.
 
 ### Corrigé (validation Linux/WSL2, 1.0.x)
 - **`build.sh` / `run_all.sh`** utilisaient les options Windows (`/EXE`,

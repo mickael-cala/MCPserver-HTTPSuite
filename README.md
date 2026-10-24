@@ -332,7 +332,8 @@ variable `<NOM>_BIN` (ex. `FILEMCP_BIN`, `MEMORYMCP_BIN`) force un chemin.
 
 Résultat de référence : `run_all` **10/10 étapes**, **194 tests unitaires**,
 **21 vérifications de robustesse/performance** (T6.14 conditionnel à une clé
-Context7), **118 tests d'intégration**.
+Context7), **118 tests d'intégration**. Validé sous **Windows** et
+**Linux (WSL2 Ubuntu 26.04)** ; macOS reste à valider.
 
 ## Configuration d'un client MCP
 

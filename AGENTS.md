@@ -38,6 +38,7 @@ export PUREBASIC_HOME=$HOME/purebasic-demo/purebasic_demo
 ./build.sh && ./run_all.sh
 ```
 Attendu : 10/10 étapes (194 unitaires, 21 robustesse/perf, 118 intégration).
+Validé sous WSL2 Ubuntu 26.04 le 2026-10-24 : 10/10, 194, 21, 118.
 Attention : `build/` est partagé avec Windows si le dépôt est sur `/mnt/c` —
 relancer `build.bat` après une validation Linux.
 
