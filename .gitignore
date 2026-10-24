@@ -10,6 +10,13 @@ build/
 src/fileMCP
 src/filemcpserver.exe
 
+# Bases SQLite par defaut des serveurs
+memory.db
+database.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Fichiers de test locaux
 src/test.txt
 

@@ -1,19 +1,36 @@
 ; ============================================================================
 ;  protocol.pbi - Reponses MCP standardisees (initialize)
 ;  Declare l'identite du serveur : chaque serveur renseigne ces globals
-;  avant d'appeler MCPMainLoop() (voir jsonrpc.pbi).
+;  avant d'appeler MCPHttpMainLoop() (voir http_server.pbi).
 ; ============================================================================
 ;  A inclure avant jsonrpc.pbi :
 ;    IncludeFile "../mcp_common/protocol.pbi"
 ; ============================================================================
 
 Global G_ServerName.s = "MCP-PB-Server"
-Global G_ServerVersion.s = "1.0.0"
+Global G_ServerVersion.s = "2.0.0"
+
+; Version MCP annoncee par defaut. Le transport est Streamable HTTP
+; JSON uniquement (pas de SSE), disponible a partir de 2025-03-26.
+Global G_McpProtocolVersion.s = "2025-06-18"
+
+Procedure.i IsSupportedProtocolVersion(V.s)
+  Select V
+    Case "2025-03-26", "2025-06-18"
+      ProcedureReturn #True
+  EndSelect
+  ProcedureReturn #False
+EndProcedure
 
 ; Remplit l'objet "result" d'une reponse "initialize", conforme au
-; protocole MCP (protocolVersion 2024-11-05, capacites, serverInfo).
-Procedure BuildInitializeResponse(ResultObj.i)
-  SetJSONString(AddJSONMember(ResultObj, "protocolVersion"), "2024-11-05")
+; protocole MCP (version negociee, capacites, serverInfo).
+Procedure BuildInitializeResponse(ResultObj.i, RequestedVersion.s)
+  Protected Version.s = G_McpProtocolVersion
+  If IsSupportedProtocolVersion(RequestedVersion)
+    Version = RequestedVersion
+  EndIf
+
+  SetJSONString(AddJSONMember(ResultObj, "protocolVersion"), Version)
   Protected Caps.i = AddJSONMember(ResultObj, "capabilities")
   SetJSONObject(Caps)
   SetJSONObject(AddJSONMember(Caps, "tools"))

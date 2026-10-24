@@ -1,9 +1,9 @@
 ; ============================================================================
 ;  unit_test.pbi - Micro-framework de tests unitaires PureBasic
-;  Sortie sur stderr (Print ne doit pas polluer un eventuel flux stdout).
+;  Sortie sur stderr (le serveur n'utilise pas stdout).
 ; ============================================================================
 ;  Usage dans un tests/test_<module>.pb console :
-;    IncludeFile "../mcp_common/stdio.pbi"
+;    IncludeFile "../mcp_common/runtime.pbi"
 ;    IncludeFile "../tests/unit_test.pbi"
 ;    ... tests avec UTAssert / UTAssertStr ...
 ;    UTFinalize()   ; rapport + code de sortie (0 = tout passe)

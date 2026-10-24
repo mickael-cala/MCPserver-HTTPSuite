@@ -1,21 +1,22 @@
 ; ============================================================================
-;  SERVEUR MCP - Context7 (PureBasic Console / Stdio)
+;  SERVEUR MCP - Context7 (PureBasic HTTP)
 ;  Resolution de bibliotheques + documentation via context7.com
 ; ============================================================================
 ;  Compilation : build.bat / build.sh
-;  Transport   : JSON-RPC 2.0 sur stdin / stdout (delimite par \n)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
 ;  Config      : MCP_CONTEXT7_API_KEY = cle API (prefixe ctx7sk) ;
 ;                query_docs l'exige, resolve_library_id fonctionne sans.
 ; ============================================================================
 
 EnableExplicit
 
-IncludeFile "../mcp_common/stdio.pbi"
+IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/logging.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/http.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
 IncludeFile "../mcp_common/jsonrpc.pbi"
+IncludeFile "../mcp_common/http_server.pbi"
 
 IncludeFile "context7_core.pbi"
 
@@ -23,9 +24,9 @@ IncludeFile "context7_core.pbi"
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "Context7MCPServer-PureBasic"
-G_ServerVersion = "1.0.0"
+G_ServerVersion = "2.0.0"
 
-If Not CheckStdio()
+If Not CheckRuntime()
   End 1
 EndIf
 
@@ -45,6 +46,8 @@ EndIf
 *G_ToolHandler = @C7Dispatch()
 *G_CatalogBuilder = @C7BuildCatalog()
 
-MCPMainLoop()
+If Not MCPHttpMainLoop(8106)
+  End 1
+EndIf
 
 End

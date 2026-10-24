@@ -1,15 +1,14 @@
 ; ============================================================================
-;  jsonrpc.pbi - Noyau JSON-RPC 2.0 / boucle MCP generique
-;  Depend de stdio.pbi, json_helpers.pbi et protocol.pbi.
+;  jsonrpc.pbi - Noyau JSON-RPC 2.0 / MCP, independant du transport
+;  Depend de json_helpers.pbi et protocol.pbi.
 ; ============================================================================
-;  Chaque serveur configure les globals ci-dessous, puis appelle MCPMainLoop() :
+;  Chaque serveur configure les globals ci-dessous, puis http_server.pbi
+;  appelle ProcessRequestToJSON() pour chaque corps HTTP :
 ;
 ;    G_ServerName    = "MonServeurMCP-PureBasic"
-;    G_ServerVersion = "1.0.0"
+;    G_ServerVersion = "2.0.0"
 ;    *G_ToolHandler    = @MonDispatch()       ; Prototype MCPToolHandler
 ;    *G_CatalogBuilder = @MonBuildCatalog()   ; Prototype MCPCatalogBuilder
-;    ...
-;    MCPMainLoop()
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -25,35 +24,54 @@ Global *G_ToolHandler.MCPToolHandler = #Null
 Global *G_CatalogBuilder.MCPCatalogBuilder = #Null
 
 ; ---------------------------------------------------------------------------
-; Emission des reponses
+; Serialisation d'un id JSON-RPC (string, nombre ou null)
 ; ---------------------------------------------------------------------------
-Procedure SendResponse(RespJSON.i)
-  Protected Out.s = ComposeJSON(RespJSON)
-  SendRawLine(Out)
-  FreeJSON(RespJSON)
+Procedure.s JSONIdFragment(IdMember.i)
+  If IdMember = 0
+    ProcedureReturn "null"
+  EndIf
+  Select JSONType(IdMember)
+    Case #PB_JSON_String
+      ProcedureReturn Chr(34) + EscapeString(GetJSONString(IdMember), #PB_String_EscapeJSON) + Chr(34)
+    Case #PB_JSON_Number
+      Protected D.d = GetJSONDouble(IdMember)
+      If D = Int(D)
+        ProcedureReturn Str(Int(D))
+      EndIf
+      ProcedureReturn ReplaceString(StrD(D), ",", ".")
+    Default
+      ProcedureReturn "null"
+  EndSelect
 EndProcedure
 
-Procedure SendRawError(IdValue.i, Code.i, Msg.s)
+; ---------------------------------------------------------------------------
+; Reponse d'erreur JSON-RPC
+; ---------------------------------------------------------------------------
+Procedure.s BuildErrorResponse(IdMember.i, Code.i, Msg.s)
   Protected J.i = CreateJSON(#PB_Any)
+  If J = 0 : ProcedureReturn "" : EndIf
   Protected Root.i = SetJSONObject(JSONValue(J))
   SetJSONString(AddJSONMember(Root, "jsonrpc"), "2.0")
-  If IdValue
-    Protected IdMember.i = AddJSONMember(Root, "id")
-    If JSONType(IdValue) = #PB_JSON_String
-      SetJSONString(IdMember, GetJSONString(IdValue))
-    ElseIf JSONType(IdValue) = #PB_JSON_Number
-      SetJSONDouble(IdMember, GetJSONDouble(IdValue))
-    Else
-      SetJSONNull(IdMember)
-    EndIf
+  Protected IdVal.i = AddJSONMember(Root, "id")
+  If IdMember
+    Select JSONType(IdMember)
+      Case #PB_JSON_String
+        SetJSONString(IdVal, GetJSONString(IdMember))
+      Case #PB_JSON_Number
+        SetJSONDouble(IdVal, GetJSONDouble(IdMember))
+      Default
+        SetJSONNull(IdVal)
+    EndSelect
   Else
-    SetJSONNull(AddJSONMember(Root, "id"))
+    SetJSONNull(IdVal)
   EndIf
   Protected ErrObj.i = AddJSONMember(Root, "error")
   SetJSONObject(ErrObj)
   SetJSONInteger(AddJSONMember(ErrObj, "code"), Code)
   SetJSONString(AddJSONMember(ErrObj, "message"), Msg)
-  SendResponse(J)
+  Protected Out.s = ComposeJSON(J)
+  FreeJSON(J)
+  ProcedureReturn Out
 EndProcedure
 
 Procedure AttachResultPayload(ResultObj.i, ContentText.s, IsError.i)
@@ -85,20 +103,19 @@ Procedure.i DetectIsError(OutputStr.s)
 EndProcedure
 
 ; ---------------------------------------------------------------------------
-; Traitement generique d'une requete JSON-RPC (une ligne)
+; Traitement d'une requete JSON-RPC.
+; Retourne la reponse JSON complete, ou "" pour une notification.
 ; ---------------------------------------------------------------------------
-Procedure ProcessRequest(Line.s)
+Procedure.s ProcessRequestToJSON(Line.s)
   Protected ReqJSON.i = ParseJSON(#PB_Any, Line)
   If Not ReqJSON
-    SendRawError(#Null, -32700, "Parse error: invalid JSON")
-    ProcedureReturn
+    ProcedureReturn BuildErrorResponse(0, -32700, "Parse error: invalid JSON")
   EndIf
 
   Protected RootVal.i = JSONValue(ReqJSON)
   If JSONType(RootVal) <> #PB_JSON_Object
     FreeJSON(ReqJSON)
-    SendRawError(#Null, -32600, "Invalid Request: Root must be an object")
-    ProcedureReturn
+    ProcedureReturn BuildErrorResponse(0, -32600, "Invalid Request: Root must be an object")
   EndIf
 
   Protected MethodMember.i = GetJSONMember(RootVal, "method")
@@ -109,73 +126,84 @@ Procedure ProcessRequest(Line.s)
 
   Protected IdMember.i = GetJSONMember(RootVal, "id")
 
-  ; Notifications : pas de reponse attendue
-  If Method = "notifications/initialized"
+  If Method = ""
+    Protected BadMethod.s = BuildErrorResponse(IdMember, -32600, "Invalid Request: method must be a string")
     FreeJSON(ReqJSON)
-    ProcedureReturn
+    ProcedureReturn BadMethod
   EndIf
 
-  ; Cas particulier tools/list : emission directe du catalogue compose
+  ; Notifications : pas de reponse attendue (JSON-RPC 2.0 / MCP).
+  If Left(Method, 14) = "notifications/" Or IdMember = 0
+    FreeJSON(ReqJSON)
+    ProcedureReturn ""
+  EndIf
+
+  ; Cas particulier tools/list : le catalogue est deja un objet JSON.
   If Method = "tools/list"
     Protected CatalogJSON.i = #Null
     If *G_CatalogBuilder
       CatalogJSON = *G_CatalogBuilder()
     EndIf
 
-    Protected IdValStr.s = "null"
-    If IdMember
-      If JSONType(IdMember) = #PB_JSON_String
-        IdValStr = Chr(34) + GetJSONString(IdMember) + Chr(34)
-      ElseIf JSONType(IdMember) = #PB_JSON_Number
-        IdValStr = Str(GetJSONInteger(IdMember))
-      EndIf
+    If CatalogJSON
+      Protected CatalogBody.s = ComposeJSON(CatalogJSON)
+      Protected IdFrag.s = JSONIdFragment(IdMember)
+      FreeJSON(CatalogJSON)
+      FreeJSON(ReqJSON)
+      ProcedureReturn "{" + Chr(34) + "jsonrpc" + Chr(34) + ":" + Chr(34) + "2.0" + Chr(34) + "," + Chr(34) + "id" + Chr(34) + ":" + IdFrag + "," + Chr(34) + "result" + Chr(34) + ":" + CatalogBody + "}"
     EndIf
 
-    If CatalogJSON
-      ; Reponse conforme JSON-RPC : le catalogue est compose en un seul objet
-      ; "result" puis envoye sur une ligne (protocole stdio delimite par \n).
-      Protected Body.s = ComposeJSON(CatalogJSON)
-      SendRawLine(Chr(123) + Chr(34) + "jsonrpc" + Chr(34) + ":" + Chr(34) + "2.0" + Chr(34) + "," + Chr(34) + "id" + Chr(34) + ":" + IdValStr + "," + Chr(34) + "result" + Chr(34) + ":" + Body + Chr(125))
-      FreeJSON(CatalogJSON)
-    Else
-      SendRawError(IdMember, -32603, "Erreur : catalogue d'outils non configure")
-    EndIf
+    Protected NoCatalog.s = BuildErrorResponse(IdMember, -32603, "Erreur : catalogue d'outils non configure")
     FreeJSON(ReqJSON)
-    ProcedureReturn
+    ProcedureReturn NoCatalog
   EndIf
 
-  ; Creation de la reponse JSON-RPC standard
+  ; Methodes inconnues : erreur JSON-RPC explicite.
+  If Method <> "initialize" And Method <> "tools/call" And Method <> "ping"
+    Protected UnknownMethod.s = BuildErrorResponse(IdMember, -32601, "Method not found: " + Method)
+    FreeJSON(ReqJSON)
+    ProcedureReturn UnknownMethod
+  EndIf
+
+  ; Creation de la reponse JSON-RPC standard.
   Protected RespJSON.i = CreateJSON(#PB_Any)
+  If RespJSON = 0
+    Protected NoMemory.s = BuildErrorResponse(IdMember, -32603, "Erreur interne : memoire JSON insuffisante")
+    FreeJSON(ReqJSON)
+    ProcedureReturn NoMemory
+  EndIf
   Protected RespRoot.i = SetJSONObject(JSONValue(RespJSON))
   SetJSONString(AddJSONMember(RespRoot, "jsonrpc"), "2.0")
 
   Protected ResId.i = AddJSONMember(RespRoot, "id")
-  If IdMember
-    If JSONType(IdMember) = #PB_JSON_String
+  Select JSONType(IdMember)
+    Case #PB_JSON_String
       SetJSONString(ResId, GetJSONString(IdMember))
-    ElseIf JSONType(IdMember) = #PB_JSON_Number
+    Case #PB_JSON_Number
       SetJSONDouble(ResId, GetJSONDouble(IdMember))
-    Else
+    Default
       SetJSONNull(ResId)
-    EndIf
-  Else
-    SetJSONNull(ResId)
-  EndIf
+  EndSelect
 
   Protected ResultObj.i = AddJSONMember(RespRoot, "result")
   SetJSONObject(ResultObj)
 
   Select Method
     Case "initialize"
-      BuildInitializeResponse(ResultObj)
+      Protected ParamsMember.i = GetJSONMember(RootVal, "params")
+      Protected RequestedVersion.s = ""
+      If ParamsMember And JSONType(ParamsMember) = #PB_JSON_Object
+        RequestedVersion = GetArgString(ParamsMember, "protocolVersion")
+      EndIf
+      BuildInitializeResponse(ResultObj, RequestedVersion)
 
     Case "tools/call"
-      Protected ParamsMember.i = GetJSONMember(RootVal, "params")
+      Protected CallParams.i = GetJSONMember(RootVal, "params")
       Protected ToolName.s = ""
       Protected ArgsMember.i = #Null
-      If ParamsMember And JSONType(ParamsMember) = #PB_JSON_Object
-        ToolName = GetArgString(ParamsMember, "name")
-        ArgsMember = GetJSONMember(ParamsMember, "arguments")
+      If CallParams And JSONType(CallParams) = #PB_JSON_Object
+        ToolName = GetArgString(CallParams, "name")
+        ArgsMember = GetJSONMember(CallParams, "arguments")
       EndIf
 
       Protected OutputStr.s = ""
@@ -196,28 +224,12 @@ Procedure ProcessRequest(Line.s)
 
       AttachResultPayload(ResultObj, OutputStr, IsErr)
 
-    Default
-      ; Autres methodes : resultat vide
+    Case "ping"
+      ; Resultat vide : objet {} deja cree.
   EndSelect
 
-  SendResponse(RespJSON)
+  Protected RespOut.s = ComposeJSON(RespJSON)
+  FreeJSON(RespJSON)
   FreeJSON(ReqJSON)
-EndProcedure
-
-; ---------------------------------------------------------------------------
-; Boucle principale : lit stdin jusqu'a EOF, puis sort proprement
-; ---------------------------------------------------------------------------
-Procedure MCPMainLoop()
-  Define Line.s
-
-  While #True
-    Line = ReadStdinLine()
-    If Line = "" And G_EOF
-      Break                      ; EOF stdin -> sortie propre du serveur
-    EndIf
-    Line = Trim(Line)
-    If Line <> ""
-      ProcessRequest(Line)
-    EndIf
-  Wend
+  ProcedureReturn RespOut
 EndProcedure

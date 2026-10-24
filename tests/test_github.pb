@@ -7,7 +7,7 @@
 
 EnableExplicit
 
-IncludeFile "../mcp_common/stdio.pbi"
+IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/logging.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/http.pbi"
@@ -101,7 +101,7 @@ EndProcedure
 ; ===========================================================================
 ; Programme principal
 ; ===========================================================================
-If Not CheckStdio()
+If Not CheckRuntime()
   End 1
 EndIf
 

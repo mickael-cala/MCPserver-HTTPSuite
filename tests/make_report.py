@@ -54,7 +54,7 @@ def main():
 
     html = f"""<!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8">
-<title>Rapport de tests - MCPserver-StdioSuite</title>
+<title>Rapport de tests - MCPserver-HTTPSuite</title>
 <style>
 body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #222; }}
 table {{ border-collapse: collapse; margin: 1rem 0; }}

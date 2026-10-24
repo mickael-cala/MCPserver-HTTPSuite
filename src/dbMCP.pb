@@ -1,9 +1,9 @@
 ; ============================================================================
-;  SERVEUR MCP - Database (PureBasic Console / Stdio)
+;  SERVEUR MCP - Database (PureBasic HTTP)
 ;  Exploration SQL en lecture seule : SQLite (integre) + PostgreSQL (optionnel)
 ; ============================================================================
 ;  Compilation : build.bat / build.sh
-;  Transport   : JSON-RPC 2.0 sur stdin / stdout (delimite par \n)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
 ;  Config      : MCP_DB_PATH           = fichier SQLite (defaut: database.db)
 ;                MCP_DB_POSTGRES_DSN   = chaine de connexion PostgreSQL
 ;                MCP_DB_ALLOW_WRITE=1  = autorise INSERT/UPDATE/DELETE/DDL
@@ -11,11 +11,12 @@
 
 EnableExplicit
 
-IncludeFile "../mcp_common/stdio.pbi"
+IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/logging.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
 IncludeFile "../mcp_common/jsonrpc.pbi"
+IncludeFile "../mcp_common/http_server.pbi"
 
 IncludeFile "db_core.pbi"
 
@@ -23,9 +24,9 @@ IncludeFile "db_core.pbi"
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "DatabaseMCPServer-PureBasic"
-G_ServerVersion = "1.0.0"
+G_ServerVersion = "2.0.0"
 
-If Not CheckStdio()
+If Not CheckRuntime()
   End 1
 EndIf
 
@@ -57,7 +58,9 @@ EndIf
 *G_ToolHandler = @DbDispatch()
 *G_CatalogBuilder = @DbBuildCatalog()
 
-MCPMainLoop()
+If Not MCPHttpMainLoop(8105)
+  End 1
+EndIf
 
 DbClose()
 

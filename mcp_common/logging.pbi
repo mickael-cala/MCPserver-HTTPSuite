@@ -1,10 +1,10 @@
 ; ============================================================================
 ;  logging.pbi - Journalisation sur stderr pour les serveurs MCP
-;  Depend de stdio.pbi (SendStderrLine). Jamais sur stdout : le flux MCP
-;  ne doit contenir que du JSON-RPC.
+;  Depend de runtime.pbi (SendStderrLine). Jamais sur stdout : le serveur
+;  HTTP n'ecrit rien sur la sortie standard.
 ; ============================================================================
-;  A inclure apres stdio.pbi :
-;    IncludeFile "../mcp_common/stdio.pbi"
+;  A inclure apres runtime.pbi :
+;    IncludeFile "../mcp_common/runtime.pbi"
 ;    IncludeFile "../mcp_common/logging.pbi"
 ; ============================================================================
 

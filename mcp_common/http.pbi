@@ -6,8 +6,8 @@
 ;  Linux/macOS : curl (config file) -> en-tetes supportees ; Status = -1
 ;                si curl est absent.
 ;
-;  A inclure apres stdio.pbi (SendStderrLine) :
-;    IncludeFile "../mcp_common/stdio.pbi"
+;  A inclure apres runtime.pbi (SendStderrLine) :
+;    IncludeFile "../mcp_common/runtime.pbi"
 ;    IncludeFile "../mcp_common/logging.pbi"
 ;    IncludeFile "../mcp_common/http.pbi"
 ;

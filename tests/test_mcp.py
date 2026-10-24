@@ -3,11 +3,19 @@
 """
 Tests fonctionnels des serveurs MCP, via le harnais tests/mcp_client.py.
 
+Transport : HTTP JSON-RPC (POST /mcp), sans SSE. Chaque serveur est lance
+sur un port libre et interroge via GET /health puis POST /mcp.
+
 Serveurs testes :
     fileMCP                   gestion de fichiers (racine temporaire)
-    MCP-SequentialThinking-PB raisonnement sequentiel (local, sans reseau)
     MCP-Fetch-PB              recuperation web (catalogue + cas d'erreur hors
                               ligne ; le cas nominal necessite internet)
+    MCP-SequentialThinking-PB raisonnement sequentiel (local, sans reseau)
+    memoryMCP                 graphe d'entites SQLite
+    dbMCP                     exploration SQL SQLite/PostgreSQL
+    context7MCP               API Context7 (live conditionnel)
+    gitMCP                    depots git locaux
+    githubMCP                 API GitHub via mock local
 
 Chaque binaire est cherche dans l'ordre :
     1. variable d'environnement <NOM>_BIN (ex. FILEMCP_BIN)
@@ -15,7 +23,7 @@ Chaque binaire est cherche dans l'ordre :
     3. src/<nom>(.exe)
 
 Usage :
-    python tests/test_mcp.py [nom-du-serveur ...]   # par defaut : les 3
+    python tests/test_mcp.py [nom-du-serveur ...]   # par defaut : les 8
 """
 
 import json
@@ -575,6 +583,91 @@ def run_checks_github(client):
     check("T5.15 JSON invalide -> erreur", err and "reponse GitHub invalide" in text, text[:120])
 
 
+# ---------------------------------------------------------------------------
+# Suite transport HTTP (sans SSE)
+# ---------------------------------------------------------------------------
+
+def run_tests_transport():
+    print("\n== Transport HTTP JSON (sans SSE) ==")
+    with tempfile.TemporaryDirectory(prefix="http-transport-") as tmp:
+        env = {"MCP_ROOT": tmp, "MCP_ROOT_SECRET": ROOT_SECRET}
+        with MCPTestClient(find_binary("fileMCP"), env=env) as client:
+            status, body, headers = client.raw_request("GET", "/health")
+            health = json.loads(body.decode("utf-8")) if body else {}
+            check("health HTTP 200", status == 200, f"status={status}")
+            check("health transport=http", health.get("transport") == "http", str(health))
+            check("health sse=false", health.get("sse") is False, str(health))
+
+            status, body, headers = client.raw_request("GET", "/mcp")
+            check("GET /mcp -> 405", status == 405, f"status={status}")
+            check("GET /mcp Allow POST", "POST" in headers.get("allow", ""), str(headers))
+            check("GET /mcp sans SSE",
+                  "text/event-stream" not in headers.get("content-type", "").lower(),
+                  str(headers))
+
+            status, body, headers = client.raw_request("DELETE", "/mcp")
+            check("DELETE /mcp -> 405", status == 405, f"status={status}")
+
+            status, body, headers = client.raw_request(
+                "POST", "/mcp", body=b"{}",
+                headers={"Content-Type": "text/plain"})
+            check("Content-Type invalide -> 415", status == 415, f"status={status}")
+
+            status, body, _ = client.post_raw(
+                b"{pas du json", headers={"Content-Type": "application/json"})
+            resp = json.loads(body.decode("utf-8")) if body else {}
+            check("JSON invalide -> -32700",
+                  status == 200 and (resp.get("error") or {}).get("code") == -32700,
+                  f"status={status}, {resp}")
+
+            status, body, _ = client.post_raw(
+                b'{"jsonrpc":"2.0","method":"notifications/initialized"}',
+                headers={"Content-Type": "application/json"})
+            check("notification -> 202 sans corps",
+                  status == 202 and body == b"", f"status={status}, body={body[:80]!r}")
+
+            status, body, _ = client.post_raw(
+                b'{"jsonrpc":"2.0","id":99,"method":"inconnue"}',
+                headers={"Content-Type": "application/json"})
+            resp = json.loads(body.decode("utf-8"))
+            check("methode inconnue -> -32601",
+                  (resp.get("error") or {}).get("code") == -32601, str(resp))
+
+            status, body, _ = client.post_raw(
+                b'[{"jsonrpc":"2.0","id":1,"method":"ping"}]',
+                headers={"Content-Type": "application/json"})
+            resp = json.loads(body.decode("utf-8"))
+            check("lot JSON-RPC -> -32600",
+                  (resp.get("error") or {}).get("code") == -32600, str(resp))
+
+            huge = (b'{"jsonrpc":"2.0","id":1,"method":"ping","pad":"'
+                    + b"x" * (1024 * 1024) + b'"}')
+            status, body, _ = client.post_raw(
+                huge, headers={"Content-Type": "application/json"})
+            check("corps > 1 Mio -> 413", status == 413, f"status={status}")
+            check("serveur vivant apres 413", len(client.list_tools()) == 10)
+
+            status, body, _ = client.raw_request(
+                "POST", "/mcp",
+                body=b'{"jsonrpc":"2.0","id":1,"method":"ping"}',
+                headers={"Content-Type": "application/json",
+                         "Origin": "http://evil.example"})
+            check("Origin etrangere -> 403", status == 403, f"status={status}")
+
+            status, body, _ = client.raw_request("GET", "/inconnu")
+            check("chemin inconnu -> 404", status == 404, f"status={status}")
+
+        with MCPTestClient(find_binary("fileMCP"), env=env,
+                           token="secret-test") as client:
+            status, body, _ = client.raw_request(
+                "POST", "/mcp",
+                body=b'{"jsonrpc":"2.0","id":1,"method":"ping"}',
+                headers={"Content-Type": "application/json"})
+            check("token absent -> 401", status == 401, f"status={status}")
+            resp = client.request("ping")
+            check("token correct -> 200", "result" in resp, str(resp))
+
+
 SUITES = {
     "fileMCP": run_tests_filemcp,
     "MCP-SequentialThinking-PB": run_tests_sequential,
@@ -596,6 +689,10 @@ def main():
 
     skipped = []
     global current_suite
+    if "fileMCP" in requested:
+        current_suite = "transport"
+        run_tests_transport()
+        current_suite = None
     for server in requested:
         binary = find_binary(server)
         if binary is None:

@@ -2,7 +2,7 @@
 ;  json_helpers.pbi - Helpers JSON partages (arguments d'outils, schémas)
 ;  Partage par tous les serveurs MCP du depot.
 ; ============================================================================
-;  A inclure apres stdio.pbi :
+;  A inclure apres runtime.pbi :
 ;    IncludeFile "../mcp_common/json_helpers.pbi"
 ; ============================================================================
 

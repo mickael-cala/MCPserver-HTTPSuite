@@ -112,12 +112,6 @@ echo "=== Rapport ==="
 echo "Etapes reussies : $STEP_OK, echouees : $STEP_KO"
 
 python3 tests/make_report.py "$STEP_OK" "$STEP_KO" || python tests/make_report.py "$STEP_OK" "$STEP_KO"
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Rapport de tests MCPserver-StdioSuite</title></head><body>
-<h1>Rapport de tests</h1>
-<p>Etapes reussies : $STEP_OK - echouees : $STEP_KO</p>
-</body></html>
-EOF
 echo "Rapport genere : tests/report.html"
 
 [ "$STEP_KO" -eq 0 ]

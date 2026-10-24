@@ -13,7 +13,35 @@
 | `gitMCP` | sous-processus git requis ; sortie plafonnée à 40 Ko |
 | `githubMCP` | token requis ; écritures via `confirm=true` ; pagination manuelle |
 
-## Limitations par design
+## Limitations par design (transport HTTP)
+
+- **Aucun SSE** : le serveur ne renvoie jamais `text/event-stream` et n'ouvre
+  aucun flux d'événements. `GET /mcp` et `DELETE /mcp` renvoient `405`.
+  Un client qui exige SSE ne peut pas utiliser cette suite.
+- **Serveur sans état** : pas de `Mcp-Session-Id`, pas de reprise de session,
+  pas de notification serveur→client. Chaque requête est indépendante.
+- **Une requête par connexion** (`Connection: close`) : pas de keep-alive,
+  pas de pipelining. Chaque appel HTTP rouvre une connexion TCP locale.
+- **Traitement séquentiel** : un seul appel d'outil à la fois par processus.
+  Un outil long (fetch, git, GitHub) bloque les autres requêtes du même
+  serveur, y compris `/health`.
+- **Pas de streaming de résultats** : la réponse complète est envoyée d'un
+  bloc (`Content-Length`).
+- **Pas de `Transfer-Encoding: chunked`** : le client doit envoyer
+  `Content-Length` (`501` sinon).
+- **Corps limité à 1 Mio** par défaut (`MCP_HTTP_MAX_BODY`) : au-delà,
+  réponse `413`. Le serveur draine une partie du corps pour permettre au
+  client de lire la réponse.
+- **Timeout d'inactivité de 10 s** pour les en-têtes/corps : un client très
+  lent reçoit `408`.
+- **Pas de TLS natif** : le transport est HTTP en clair. Pour HTTPS, placer
+  un reverse proxy devant le serveur (et garder l'écoute sur loopback).
+- **Pas de CORS** : les origines étrangères sont refusées (`403`) ; aucun
+  en-tête `Access-Control-Allow-Origin` n'est émis.
+- **Une seule instance par port** : un second processus sur le même port
+  échoue au démarrage (code 1, message explicite).
+
+## Limitations métier
 
 - **`read_file` tronque au-delà de 20 000 octets** ; utiliser `read_file_lines`
   pour les gros fichiers (limite 5 Mo).
@@ -21,10 +49,6 @@
   (`exe`, `dll`, `so`, `dylib`…) sont refusées par les outils de lecture.
 - **`delete_file` ne supprime que les dossiers vides** ; pas de suppression
   récursive (voir la roadmap).
-- **Un seul client à la fois** : le serveur traite les requêtes en séquence
-  sur stdin/stdout, sans sessions ni annulation de requêtes.
-- **Communication unidirectionnelle par ligne** : chaque message JSON-RPC doit
-  tenir sur une seule ligne (protocole stdio délimité par `\n`).
 
 ## Problèmes connus
 
@@ -35,29 +59,36 @@
 - `change_root` avec un secret incorrect renvoie `isError: true` mais le
   texte reste en français non structuré ; les clients doivent tester le
   drapeau, pas le texte.
-- Tests exécutés sous **Windows** et **Linux (WSL2 Ubuntu 26.04)** ; macOS
-  n'est pas encore validé. Aucune CI automatisée (PureBasic sous licence).
+- **Validation** : la version 2.0.0 (HTTP) est compilée et testée sous
+  **Windows** (10/10, 194 unitaires, 21 robustesse/perf, 118 intégration).
+  La validation **Linux/WSL2** et **macOS** de cette version reste à refaire ;
+  la version 1.0.0 avait été validée sous WSL2 Ubuntu 26.04.
+- Aucune CI automatisée (PureBasic sous licence).
 
 ## Résultats des tests
 
-Dernière exécution de `run_all.bat` : **10/10 étapes** — tests unitaires
-24 + 33 + 37 + 19 + 24 + 40 réussis (mcp_common, Memory, Database, Context7,
-Git, GitHub), robustesse/performance **17/17**, tests d'intégration
-**100/100** (8 serveurs ; PostgreSQL et Context7 live sont ignorés sans
-configuration/réseau, GitHub utilise un mock local).
+Dernière exécution de `run_all.bat` (Windows) : **10/10 étapes** — tests
+unitaires 41 + 33 + 37 + 19 + 24 + 40 = **194** réussis (mcp_common, Memory,
+Database, Context7, Git, GitHub), robustesse/performance **21/21**,
+tests d'intégration **118/118** (8 serveurs + transport ; PostgreSQL et
+Context7 live sont ignorés sans configuration/réseau, GitHub utilise un mock
+local).
 
-## Comportements documentés (Phase 6)
+## Comportements documentés
 
 - **Deux instances Memory sur la même base** : SQLite autorise plusieurs
   connexions ; les écritures sont sérialisées (verrou d'écriture), les
   lectures voient l'état validé. Aucun mode WAL n'est activé : des écritures
   concurrentes longues peuvent produire une erreur `database is locked`
   remontée proprement par l'outil.
-- **Ligne stdin > 64 Ko** : la ligne est tronquée par la couche stdio
-  (buffer 64 Ko) et rejetée en `-32700` ; le serveur poursuit normalement.
-  Ne pas envoyer plus de 64 Ko par message JSON.
+- **Corps HTTP > 1 Mio** : réponse `413` ; le serveur lit/ignore au plus
+  1 Mio supplémentaire avant de fermer pour éviter un blocage du client.
 - **En-têtes HTTP hors Windows** : assurés par **curl** (config file). Si curl
   est absent, `context7MCP`/`githubMCP` retournent une erreur explicite.
 - **Compilation Linux** : nécessite `libssl-dev` et `libsqlite3-dev`
-  (bibliothèques liées par PureBasic). Validé sous WSL2 Ubuntu 26.04 ;
-  macOS non testé à ce jour.
+  (bibliothèques liées par PureBasic) ; `curl` pour les appels HTTP avec
+  en-têtes. `build.sh` et le serveur HTTP utilisent la bibliothèque réseau
+  intégrée de PureBasic (aucune dépendance supplémentaire).
+- **Ports par défaut** : 8101 fileMCP, 8102 Fetch, 8103 SequentialThinking,
+  8104 Memory, 8105 Database, 8106 Context7, 8107 Git, 8108 GitHub. Utiliser
+  `MCP_HTTP_PORT` pour un serveur isolé, pas pour `start_all`.

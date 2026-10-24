@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 6 - Tests de robustesse (T6.1-T6.8) et de performance (T6.9-T6.14).
+Phase 6 - Tests de robustesse (T6.1-T6.8), absence de SSE (T6.15) et
+performances (T6.9-T6.14) sur le transport HTTP.
 
 Usage :
     python tests/test_robustness.py [--quick]
@@ -17,7 +18,6 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 
@@ -54,89 +54,80 @@ def ms(start):
 
 
 # ---------------------------------------------------------------------------
-# T6.1 - T6.4 : robustesse stdio / charge
+# T6.1 - T6.4 : robustesse HTTP / charge
 # ---------------------------------------------------------------------------
 
-def test_stdio_robustness():
-    print("\n== T6.1-T6.4 : robustesse stdio ==")
+def test_http_robustness():
+    print("\n== T6.1-T6.4 : robustesse HTTP ==")
     binary = find_binary("fileMCP")
     n = int(os.environ.get("MCP_STRESS_REQUESTS", "500"))
-    with MCPTestClient(binary) as client:
-        latencies = []
-        errors = 0
-        t0 = time.perf_counter()
-        for _ in range(n):
-            t = time.perf_counter()
-            try:
-                names = client.list_tools()
-                if len(names) != 10:
+
+    with tempfile.TemporaryDirectory(prefix="robust-http-") as tmp:
+        with MCPTestClient(binary, env={"MCP_ROOT": tmp}) as client:
+            latencies = []
+            errors = 0
+            t0 = time.perf_counter()
+            for _ in range(n):
+                t = time.perf_counter()
+                try:
+                    names = client.list_tools()
+                    if len(names) != 10:
+                        errors += 1
+                except Exception:
                     errors += 1
-            except Exception:
-                errors += 1
-            latencies.append(ms(t))
-        total = ms(t0)
-        first = sum(latencies[:100]) / min(100, len(latencies))
-        last = sum(latencies[-100:]) / min(100, len(latencies))
-        check(f"T6.1 {n} tools/list sans erreur", errors == 0, f"{errors} erreurs")
-        check("T6.1 latence stable (< x5)", last <= max(first * 5, 5),
-              f"debut {first:.2f} ms, fin {last:.2f} ms, total {total:.0f} ms")
+                latencies.append(ms(t))
+            total = ms(t0)
+            first = sum(latencies[:100]) / min(100, len(latencies))
+            last = sum(latencies[-100:]) / min(100, len(latencies))
+            check(f"T6.1 {n} tools/list sans erreur", errors == 0, f"{errors} erreurs")
+            check("T6.1 latence stable (< x5)", last <= max(first * 5, 10),
+                  f"debut {first:.2f} ms, fin {last:.2f} ms, total {total:.0f} ms")
 
-        # T6.3 : JSON malforme -> erreur -32700, serveur vivant
-        client.proc.stdin.write("{ceci n'est pas du json" + chr(10))
-        client.proc.stdin.flush()
-        resp = client._recv()
-        while (resp.get("error") or {}).get("code") != -32700:
-            resp = client._recv()   # ignorer une eventuelle reponse en attente
-        check("T6.3 JSON malforme -> -32700", True, "")
-        check("T6.3 serveur vivant apres erreur", len(client.list_tools()) == 10)
-
-    # T6.4 : fermeture brutale de stdin -> code de sortie 0
-    proc = subprocess.Popen([str(binary)], stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    proc.stdin.write(b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n')
-    proc.stdin.flush()
-    proc.stdout.readline()   # attendre la reponse avant fermeture
-    proc.stdin.close()
-    code = proc.wait(timeout=10)
-    check("T6.4 stdin ferme -> sortie propre (code 0)", code == 0, f"code={code}")
-
-    # T6.2 : ligne JSON de 1 Mo -> rejet propre, pas de crash
-    # (stdout draine en parallele : l ecriture synchrone peut bloquer
-    #  pendant que le serveur recalcule ses lignes tronquees)
-    proc = subprocess.Popen([str(binary)], stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    lines = []
-    def _reader():
-        while True:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            lines.append(line)
-    threading.Thread(target=_reader, daemon=True).start()
-    huge = '{"jsonrpc":"2.0","id":1,"method":"tools/list","pad":"' + "x" * (1024 * 1024) + '"}' + chr(10)
-    proc.stdin.write(huge.encode())
-    proc.stdin.flush()
-    proc.stdin.write(b'{"jsonrpc":"2.0","id":2,"method":"tools/list"}' + bytes([10]))
-    proc.stdin.flush()
-    deadline = time.time() + 15
-    got_tools = False
-    while time.time() < deadline and not got_tools:
-        for line in list(lines):
+            # T6.3 : JSON malforme -> erreur -32700, serveur vivant
+            status, body, _ = client.post_raw(
+                b"{ceci n'est pas du json",
+                headers={"Content-Type": "application/json"},
+            )
             try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if msg.get("id") == 2 and "result" in msg:
-                got_tools = True
-                break
-        time.sleep(0.05)
-    proc.stdin.close()
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-    check("T6.2 JSON 1 Mo -> rejet propre, serveur repond encore", got_tools)
+                resp = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                resp = {}
+            check("T6.3 JSON malforme -> -32700",
+                  status == 200 and (resp.get("error") or {}).get("code") == -32700,
+                  f"status={status}, body={body[:120]!r}")
+            check("T6.3 serveur vivant apres erreur", len(client.list_tools()) == 10)
+
+            # T6.2 : corps JSON de 1 Mio -> 413, pas de crash
+            huge = (b'{"jsonrpc":"2.0","id":1,"method":"ping","pad":"'
+                    + b"x" * (1024 * 1024) + b'"}')
+            status, body, _ = client.post_raw(
+                huge, headers={"Content-Type": "application/json"})
+            check("T6.2 corps 1 Mio -> 413", status == 413,
+                  f"status={status}, body={body[:120]!r}")
+            check("T6.2 serveur vivant apres 413", len(client.list_tools()) == 10)
+
+        # T6.4 : port deja utilise -> second processus refuse proprement
+        with MCPTestClient(binary, env={"MCP_ROOT": tmp},
+                           auto_initialize=False) as first:
+            proc = subprocess.run(
+                [str(binary)],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                env={
+                    **os.environ,
+                    "MCP_ROOT": tmp,
+                    "MCP_HTTP_HOST": "127.0.0.1",
+                    "MCP_HTTP_PORT": str(first.port),
+                },
+            )
+            check("T6.4 port deja utilise -> code non nul",
+                  proc.returncode != 0, f"code={proc.returncode}")
+            stderr = (proc.stderr or "").lower()
+            check("T6.4 message port clair",
+                  "port" in stderr or "ecouter" in stderr,
+                  (proc.stderr or "")[:160])
+
 
 # ---------------------------------------------------------------------------
 # T6.5 - T6.7 : robustesse SQLite / Memory / Database
@@ -191,11 +182,25 @@ def test_network_cut():
 
 
 # ---------------------------------------------------------------------------
-# T6.9 - T6.13 : performances
+# T6.15 : le transport ne doit jamais basculer en SSE
+# ---------------------------------------------------------------------------
+
+def test_no_sse():
+    print("\n== T6.15 : absence de SSE ==")
+    with MCPTestClient(find_binary("fileMCP")) as client:
+        status, body, headers = client.raw_request("GET", "/mcp")
+        ctype = headers.get("content-type", "")
+        check("T6.15 GET /mcp -> 405", status == 405, f"status={status}")
+        check("T6.15 pas de text/event-stream",
+              "text/event-stream" not in ctype.lower(), ctype)
+
+
+# ---------------------------------------------------------------------------
+# T6.9 - T6.14 : performances
 # ---------------------------------------------------------------------------
 
 def test_performance():
-    print("\n== T6.9-T6.13 : performances ==")
+    print("\n== T6.9-T6.14 : performances ==")
     with tempfile.TemporaryDirectory(prefix="perf-") as tmp:
         # T6.9 : 100 entites creees en < 500 ms
         db = str(Path(tmp) / "perf_mem.db")
@@ -311,9 +316,10 @@ def main():
         print(f"[SKIP] binaires manquants : {missing} (compilez d'abord)")
         sys.exit(1)
 
-    test_stdio_robustness()
+    test_http_robustness()
     test_storage_robustness()
     test_network_cut()
+    test_no_sse()
     test_performance()
 
     print(f"\n{passed} reussis, {failed} echoues")

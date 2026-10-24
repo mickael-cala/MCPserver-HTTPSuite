@@ -1,48 +1,59 @@
 {
   "mcpServers": {
     "file-pb": {
-      "command": "/chemin/vers/build/fileMCP",
-      "env": {
-        "MCP_ROOT": "/chemin/vers/zone/autorisee",
-        "MCP_ROOT_SECRET": "mot-de-passe-fort"
+      "type": "http",
+      "url": "http://127.0.0.1:8101/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
       }
     },
     "fetch-pb": {
-      "command": "/chemin/vers/build/MCP-Fetch-PB"
+      "type": "http",
+      "url": "http://127.0.0.1:8102/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
+      }
     },
     "sequential-thinking-pb": {
-      "command": "/chemin/vers/build/MCP-SequentialThinking-PB"
+      "type": "http",
+      "url": "http://127.0.0.1:8103/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
+      }
     },
     "memory-pb": {
-      "command": "/chemin/vers/build/memoryMCP",
-      "env": {
-        "MCP_MEMORY_DB": "/chemin/vers/memory.db"
+      "type": "http",
+      "url": "http://127.0.0.1:8104/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
       }
     },
     "db-pb": {
-      "command": "/chemin/vers/build/dbMCP",
-      "env": {
-        "MCP_DB_PATH": "/chemin/vers/database.db",
-        "MCP_DB_POSTGRES_DSN": "host=localhost port=5432 dbname=test user=reader",
-        "MCP_DB_ALLOW_WRITE": "0"
+      "type": "http",
+      "url": "http://127.0.0.1:8105/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
       }
     },
     "context7-pb": {
-      "command": "/chemin/vers/build/context7MCP",
-      "env": {
-        "MCP_CONTEXT7_API_KEY": "ctx7sk_..."
+      "type": "http",
+      "url": "http://127.0.0.1:8106/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
       }
     },
     "git-pb": {
-      "command": "/chemin/vers/build/gitMCP",
-      "env": {
-        "MCP_GIT_EXE": "git"
+      "type": "http",
+      "url": "http://127.0.0.1:8107/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
       }
     },
     "github-pb": {
-      "command": "/chemin/vers/build/githubMCP",
-      "env": {
-        "MCP_GITHUB_TOKEN": "ghp_..."
+      "type": "http",
+      "url": "http://127.0.0.1:8108/mcp",
+      "headers": {
+        "Authorization": "Bearer votre-token-mcp"
       }
     }
   }

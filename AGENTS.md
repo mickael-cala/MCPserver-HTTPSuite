@@ -5,7 +5,7 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
 
 ## Reprise du développement (bootstrap)
 
-1. **Lire l'état du plan** : [PLAN.md](PLAN.md) (phases 0→6, statut et
+1. **Lire l'état du plan** : [PLAN.md](PLAN.md) (phases 0→7, statut et
    livrables) et [ROADMAP.md](ROADMAP.md) (suite).
 2. **Vérifier l'environnement** :
    - PureBasic 6.x (testé avec 6.41) — `pbcompiler` cherché via `PBCOMPILER`,
@@ -20,8 +20,9 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
    build.bat                  # ou ./build.sh : compile les 8 serveurs
    run_all.bat                # ou ./run_all.sh : unitaires + intégration + rapport
    ```
-   Attendu : **10/10 étapes**, **177 tests unitaires** (24+33+37+19+24+40),
-   **17/17 robustesse/performance** et **100/100 tests d'intégration**. Si ce n'est pas le cas, corriger avant
+   Attendu : **10/10 étapes**, **194 tests unitaires**
+   (41+33+37+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
+   et **118/118 tests d'intégration**. Si ce n'est pas le cas, corriger avant
    toute nouvelle fonctionnalité.
 4. **Choisir la suite** : voir [ROADMAP.md](ROADMAP.md). Ne jamais démarrer
    une phase sans avoir vert `run_all`.
@@ -36,7 +37,7 @@ export PBCOMPILER=$HOME/purebasic-demo/purebasic_demo/compilers/pbcompiler
 export PUREBASIC_HOME=$HOME/purebasic-demo/purebasic_demo
 ./build.sh && ./run_all.sh
 ```
-Attendu : 10/10 étapes (177 unitaires, 17 robustesse/perf, 100 intégration).
+Attendu : 10/10 étapes (194 unitaires, 21 robustesse/perf, 118 intégration).
 Attention : `build/` est partagé avec Windows si le dépôt est sur `/mnt/c` —
 relancer `build.bat` après une validation Linux.
 
@@ -47,7 +48,7 @@ soient à jour. Avant `git commit`, passer cette checklist :
 
 | Fichier | À mettre à jour quand… |
 |---|---|
-| `README.md` | nouvel outil, nouvelle variable d'environnement, changement de build/tests, nouveau serveur, compteurs de tests |
+| `README.md` | nouvel outil, nouvelle variable d'environnement, changement de build/tests, nouveau serveur, ports HTTP, compteurs de tests |
 | `PLAN.md` | début/fin de phase, changement de statut, nouvel écart au plan |
 | `CHANGELOG.md` | **tout changement notable** (ajout/correction/sécurité) sous `## [Non publié]` avec le détail des fichiers |
 | `ROADMAP.md` | ce qui est terminé et ce qui devient prioritaire |
@@ -58,10 +59,11 @@ soient à jour. Avant `git commit`, passer cette checklist :
 | `docs`/`.github/*.md` | modèles d'issues/PR, compteurs cités |
 
 Règle de cohérence : **tous les compteurs cités** (nombre de serveurs, de
-tests, d'étapes) doivent correspondre à la réalité du moment. Vérifier avec :
+tests, d'étapes, ports) doivent correspondre à la réalité du moment. Vérifier
+avec :
 
 ```bash
-grep -rnE "[0-9]+ tests|[0-9]+ serveurs|/9 étapes" README.md PLAN.md ERRATA.md AGENTS.md CONTRIBUTING.md
+grep -rnE "[0-9]+ tests|[0-9]+ serveurs|/9 étapes|/10 étapes" README.md PLAN.md ERRATA.md AGENTS.md CONTRIBUTING.md
 ```
 
 Les chiffres historiques du `CHANGELOG.md` sont la seule exception : ils
@@ -96,48 +98,82 @@ git push                       # uniquement si l'utilisateur le demande
 - `gitMCP.pb` + `git_core.pbi` — exploration de dépôts git locaux (sous-processus git)
 - `githubMCP.pb` + `github_core.pbi` — API REST GitHub (`MCP_GITHUB_TOKEN`, mock pour les tests)
 
-Transport **JSON-RPC 2.0 sur stdin/stdout**, une ligne JSON par message.
+Transport **JSON-RPC 2.0 sur HTTP**, endpoint `POST /mcp`, réponse
+`application/json`. **Aucun SSE** : pas de `text/event-stream`, pas de flux
+d'événements, pas de session `Mcp-Session-Id`. `GET /mcp` et `DELETE /mcp`
+renvoient `405` (`Allow: POST`). Chaque processus écoute par défaut sur
+`127.0.0.1` avec un port distinct (8101 à 8108, surchargeable via
+`MCP_HTTP_PORT`). `GET /health` expose l'état.
+
 Exécutables **console**, 100 % natifs, multi-OS (Windows / Linux / macOS).
 Le cœur métier d'un serveur va dans `src/<serveur>_core.pbi` (testable), le
-`.pb` ne contient que le `main` (lecture d'env + hooks + `MCPMainLoop()`).
+`.pb` ne contient que le `main` (lecture d'env + hooks + `MCPHttpMainLoop()`).
+
+## Transport HTTP : règles non négociables
+
+- **Pas de SSE.** Ne jamais répondre `text/event-stream`, ne jamais ouvrir de
+  flux d'événements. Le client envoie un POST JSON et reçoit un JSON.
+- **Une requête par connexion** (`Connection: close`), pas de keep-alive.
+- **`Content-Length` obligatoire** pour POST ; `Transfer-Encoding: chunked`
+  est refusé (`501`).
+- **Corps maximal** 1 Mio par défaut (`MCP_HTTP_MAX_BODY`), réponse `413`.
+- **Notifications** JSON-RPC : `202 Accepted`, corps vide.
+- **Erreurs JSON-RPC** (`-32700`, `-32600`, `-32601`, `-32603`) : HTTP `200`
+  avec un objet `error` ; les erreurs de transport utilisent les codes 4xx/5xx.
+- **Sécurité réseau** : bind loopback par défaut, validation `Origin`, jeton
+  Bearer optionnel (`MCP_HTTP_TOKEN`). Toute nouvelle route doit passer par
+  ces contrôles.
+- **Traitement séquentiel** : un seul appel d'outil à la fois par processus.
+  Ne pas introduire de threads sans revoir la sécurité et les tests.
 
 ## Commandes essentielles
 
 ```bash
 build.bat              # Windows : compile les 8 serveurs -> build\*.exe
 ./build.sh             # Linux/macOS : compile les 8 serveurs -> build/
+start_all.bat          # Windows : lance les 8 serveurs en arrière-plan
+./start_all.sh         # Linux/macOS : idem
+stop_all.bat           # Windows : arrête les 8 serveurs
+./stop_all.sh          # Linux/macOS : idem
 run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + intégration + report.html
 ./run_all.sh           # idem sous Linux/macOS
-python tests/test_mcp.py [serveur]   # intégration seule (100 tests)
+python tests/test_mcp.py [serveur]   # intégration seule (118 tests)
 ./clean.sh             # nettoie build/
 ```
 
 ## Architecture (mcp_common/)
 
-Ordre d'inclusion dans un serveur :
+Ordre d'inclusion dans un serveur HTTP :
 
 ```purebasic
-IncludeFile "../mcp_common/stdio.pbi"        ; E/S stdio, stderr, CheckStdio
-IncludeFile "../mcp_common/logging.pbi"      ; LogDebug / LogError (stderr)
-IncludeFile "../mcp_common/json_helpers.pbi" ; GetArg*, AddProp*, ToolDef
-IncludeFile "../mcp_common/http.pbi"         ; HttpGetHeaders / HttpPostHeaders (API web)
-IncludeFile "../mcp_common/protocol.pbi"     ; identité + initialize
-IncludeFile "../mcp_common/jsonrpc.pbi"      ; noyau JSON-RPC + MCPMainLoop
+IncludeFile "../mcp_common/runtime.pbi"        ; stderr, CheckRuntime
+IncludeFile "../mcp_common/logging.pbi"        ; LogDebug / LogError (stderr)
+IncludeFile "../mcp_common/json_helpers.pbi"   ; GetArg*, AddProp*, ToolDef
+IncludeFile "../mcp_common/http.pbi"           ; client HTTP (API web, optionnel)
+IncludeFile "../mcp_common/protocol.pbi"       ; identité + initialize
+IncludeFile "../mcp_common/jsonrpc.pbi"        ; noyau JSON-RPC
+IncludeFile "../mcp_common/http_server.pbi"    ; serveur HTTP + MCPHttpMainLoop
 ```
 
 Puis : renseigner `G_ServerName`/`G_ServerVersion`, affecter
-`*G_ToolHandler` et `*G_CatalogBuilder`, vérifier `CheckStdio()`, appeler
-`MCPMainLoop()`. Modèle complet : `examples/minimal_server.pb`.
+`*G_ToolHandler` et `*G_CatalogBuilder`, vérifier `CheckRuntime()`, appeler
+`MCPHttpMainLoop(<port>)` et propager l'échec (`End 1`). Modèle complet :
+`examples/minimal_server.pb`.
+
+`http_server.pbi` gère : parsing HTTP, `Content-Length`, accumulation des
+paquets, timeout d'inactivité, `Origin`, jeton, taille de corps, `/health`,
+routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
 
 ## Règles à respecter impérativement
 
 1. **`EnableExplicit`** : toute variable doit être déclarée.
-2. **Ne jamais utiliser `Input()`** : `ReadStdinLine()` / `SendRawLine()`
-   (fiables en mode pipe). Logs uniquement sur **stderr**.
+2. **Transport HTTP uniquement** : ne pas réintroduire `stdin`/`stdout`,
+   `ReadStdinLine`, `SendRawLine`, `MCPMainLoop` ni de boucle stdio. Logs
+   uniquement sur **stderr**.
 3. Sélection OS par `CompilerIf #PB_Compiler_OS = #PB_OS_Windows` /
    `CompilerElse` — le code doit compiler sur les 3 plateformes.
 4. Commentaires et messages d'erreur en **français**, style du fichier.
-5. Aucune duplication de code stdio/JSON-RPC/HTTP dans un serveur : tout va
+5. Aucune duplication de code HTTP/JSON-RPC/console dans un serveur : tout va
    dans `mcp_common/`.
 6. Tout nouvel outil MCP doit :
    - être ajouté au catalogue (`BuildToolsCatalog` / `XxxBuildCatalog`) ;
@@ -153,14 +189,16 @@ Puis : renseigner `G_ServerName`/`G_ServerVersion`, affecter
    validation anti-injection (`GitSafeParam`, `GhSafeSegment`).
 8. Ne jamais élargir le périmètre de sécurité sans demande explicite.
 9. Les exécutables vont dans `build/` (gitignoré) — jamais de binaire commité.
+10. **Pas de SSE** : toute contribution qui ajoute un flux d'événements ou un
+    endpoint `text/event-stream` est hors périmètre.
 
 ## Pièges PureBasic rencontrés (ne pas les réintroduire)
 
 - **Mots réservés** : `Args`, `To`, `Result` ne peuvent pas être des noms de
   variables/paramètres. Renommer (`GitArgs`, `Dest`, `R`).
 - **Paramètres structure** : passage **par pointeur uniquement** —
-  `Procedure Foo(*P.MaStructure)` + appel `Foo(@MaVar)`. `Procedure Foo(P.MaStructure)`
-  est une erreur de syntaxe.
+  `Procedure Foo(*P.MaStructure)` + appel `Foo(@MaVar)`.
+  `Procedure Foo(P.MaStructure)` est une erreur de syntaxe.
 - **Piège `Protected Status.Integer`** : `Integer` est une *structure* ;
   l'utiliser comme scalaire (`Str(Status)`, comparaisons) donne l'adresse de la
   structure. Déclarer `Status.i` et passer `@Status` au pointeur typé
@@ -171,6 +209,7 @@ Puis : renseigner `G_ServerName`/`G_ServerVersion`, affecter
   utiliser `TrimOut()` (git_core) ou `ReplaceString`.
 - **Chaînes JSON en PureBasic** : `~"{\"cle\":\"valeur\"}"` (préfixe `~`) ;
   un `\"` dans une chaîne normale est une erreur de compilation.
+  Utiliser `EscapeString(..., #PB_String_EscapeJSON)` pour un id JSON.
 - **`OpenDatabase`** (SQLite) exige un fichier existant : créer le fichier vide
   avant ouverture.
 - **PRAGMA / EXPLAIN** : colonnes sans type déclaré ; utiliser
@@ -179,9 +218,22 @@ Puis : renseigner `G_ServerName`/`G_ServerVersion`, affecter
   boucle jusqu'à `ProgramRunning() = 0` (sinon sortie vide). stderr n'est pas
   lisible de façon fiable → passer par le shell avec `2>&1`
   (`cmd.exe /c ""exe" args 2>&1"`) après validation stricte des entrées.
-- **HTTP avec en-têtes** : WinHTTP sous Windows ; sous Linux/macOS, le HTTP
-  intégré n'offre pas d'en-têtes → `mcp_common/http.pbi` passe par **curl**
-  (fichier de configuration, pas de quoting shell).
+- **HTTP client avec en-têtes** : WinHTTP sous Windows ; sous Linux/macOS, le
+  HTTP intégré n'offre pas d'en-têtes → `mcp_common/http.pbi` passe par
+  **curl** (fichier de configuration, pas de quoting shell).
+- **Serveur réseau PureBasic** :
+  - `InitNetwork()` **n'existe pas** : ne pas l'appeler ; `CreateNetworkServer`
+    initialise la couche réseau ;
+  - `CreateNetworkServer(#PB_Any, Port, #PB_Network_TCP | #PB_Network_IPv4, HostIP$)` ;
+  - `NetworkServerEvent()` + `EventClient()` + `Delay()` dans une boucle
+    console ; pas de fenêtre nécessaire ;
+  - `ReceiveNetworkData()` peut retourner `0` ou `-1` quand la suite du corps
+    n'est pas encore arrivée : retenter avec `Delay(1)` (voir
+    `HttpReadBody`), ne pas conclure à une erreur ;
+  - `SendNetworkData()` peut envoyer partiellement : boucler jusqu'à
+    épuisement (voir `HttpSendBytes`) ;
+  - fermer avec `Connection: close` et `CloseNetworkConnection()` ;
+  - ne pas oublier `FreeMemory()` de l'état de connexion.
 - **RunProgram sous Linux** ne gère pas les guillemets dans les arguments :
   écrire un script temporaire (`git_core.pbi` le fait) ou passer par curl -K.
 - **Fins de ligne** : `.gitattributes` impose LF aux `.sh/.py/.pb/.pbi/.md`
@@ -189,18 +241,22 @@ Puis : renseigner `G_ServerName`/`G_ServerVersion`, affecter
 - **IDE/projets** : `.pbi` = module d'inclusion ; un projet IDE est un `.pbp`
   (non fourni, voir README). Ne pas inventer de format de projet.
 
-## Protocole MCP (rappel)
+## Protocole MCP (rappel HTTP)
 
-- Requête : `{"jsonrpc":"2.0","id":N,"method":"tools/call","params":{"name":"...","arguments":{...}}}`
-- Réponse outil : `result.content[0].text` + `result.isError`.
-- `tools/list` retourne le catalogue ; `notifications/initialized` est ignoré ;
-  EOF sur stdin = arrêt propre du serveur.
+- Requête : `POST /mcp` avec
+  `{"jsonrpc":"2.0","id":N,"method":"tools/call","params":{"name":"...","arguments":{...}}}`.
+- Réponse : HTTP `200`, `result.content[0].text` + `result.isError`.
+- `initialize` : renvoie `protocolVersion` (`2025-06-18` par défaut) et
+  `serverInfo`.
+- `tools/list` : renvoie le catalogue.
+- `notifications/initialized` : pas de réponse JSON-RPC ; HTTP `202`.
+- `GET /mcp` : `405`, **jamais** de SSE.
 - Variables d'environnement par serveur : voir README et SECURITY.md.
 
 ## Structure
 
 ```
-mcp_common/                       modules partages (stdio, logging, json_helpers, http, protocol, jsonrpc)
+mcp_common/                       modules partages (runtime, logging, json_helpers, http, protocol, jsonrpc, http_server)
 src/fileMCP.pb                    gestion de fichiers
 src/MCP-Fetch-PB.pb               fetch web
 src/MCP-SequentialThinking-PB.pb  raisonnement sequentiel
@@ -209,22 +265,24 @@ src/dbMCP.pb + db_core.pbi              exploration SQL (sqlite + postgres)
 src/context7MCP.pb + context7_core.pbi  documentation Context7
 src/gitMCP.pb + git_core.pbi            exploration git locale
 src/githubMCP.pb + github_core.pbi      API REST GitHub
-examples/minimal_server.pb        serveur MCP minimal de demo
-examples/mcp.json                 configuration client complete (8 serveurs)
+examples/minimal_server.pb        serveur MCP HTTP minimal de demo (port 8090)
+examples/mcp.json                 configuration client HTTP complete (8 serveurs)
 .gitattributes                    fins de ligne (LF scripts/sources, CRLF .bat)
 build.bat/build.sh                compilation des 8 serveurs ; clean.* : nettoyage
+start_all.bat/.sh                 lancement des 8 serveurs en arriere-plan
+stop_all.bat/.sh                  arret des serveurs
 run_all.bat/run_all.sh            compilation + tests unitaires + integration + rapport
-tests/mcp_client.py               harnais de test externe (client MCP Python)
+tests/mcp_client.py               harnais de test externe (client MCP HTTP)
 tests/mock_github.py              mock local de l'API GitHub
-tests/test_mcp.py                 tests d'integration des 8 serveurs (100 tests)
+tests/test_mcp.py                 tests d'integration + transport (118 tests)
 tests/unit_test.pbi               framework de tests unitaires PureBasic
-tests/test_common.pb              tests unitaires mcp_common (24 tests)
+tests/test_common.pb              tests unitaires mcp_common (41 tests)
 tests/test_memory.pb              tests unitaires Memory (33 tests)
 tests/test_database.pb            tests unitaires Database (37 tests)
 tests/test_context7.pb            tests unitaires Context7 (19 tests)
 tests/test_git.pb                 tests unitaires Git (24 tests)
 tests/test_github.pb              tests unitaires GitHub (40 tests)
-tests/test_robustness.py          robustesse T6.1-T6.8 + perf T6.9-T6.14
+tests/test_robustness.py          robustesse T6.1-T6.15 + perf T6.9-T6.14
 tests/make_report.py              rapport HTML depuis report.json
 ```
 

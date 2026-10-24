@@ -20,4 +20,6 @@ labels: enhancement
 ## Périmètre et sécurité
 
 <!-- L'outil touche-t-il au confinement MCP_ROOT, à la suppression, aux
-     fichiers binaires ? Voir SECURITY.md et ROADMAP.md. -->
+     fichiers binaires ? Une nouvelle route HTTP est-elle nécessaire (Origin,
+     jeton, taille de corps) ? Voir SECURITY.md et ROADMAP.md. Le transport
+     reste HTTP JSON, sans SSE. -->

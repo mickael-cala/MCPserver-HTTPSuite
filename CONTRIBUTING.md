@@ -3,17 +3,19 @@
 Merci de votre intérêt ! Ce dépôt est un projet personnel, mais les
 signalements de bugs et les suggestions sont les bienvenus.
 
-Le dépôt contient **8 serveurs MCP** (45 outils) ; voir la liste et les
-variables d'environnement dans [README.md](README.md).
+Le dépôt contient **8 serveurs MCP** (45 outils) exposés en **HTTP JSON**
+(`POST /mcp`, sans SSE) ; voir la liste, les ports et les variables
+d'environnement dans [README.md](README.md).
 
 ## Signaler un bug ou proposer une fonctionnalité
 
-Utilisez les [issues GitHub](https://github.com/mickael-cala/MCPserver-StdioSuite/issues)
+Utilisez les [issues GitHub](https://github.com/mickael-cala/MCPserver-HTTPSuite/issues)
 avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
 
 - le système d'exploitation et la version de PureBasic ;
-- le serveur concerné et la requête JSON-RPC envoyée / réponse obtenue ;
-- le résultat de `python tests/test_mcp.py` (100 tests) et/ou
+- le serveur concerné, l'URL/le port, la requête JSON-RPC envoyée et la
+  réponse HTTP/JSON obtenue ;
+- le résultat de `python tests/test_mcp.py` (118 tests) et/ou
   `run_all.bat` / `./run_all.sh`.
 
 ## Soumettre une modification
@@ -38,15 +40,20 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
   = options Windows (`/EXE`, `/CONSOLE`), `build.sh` = options POSIX
   (`-o`, `-cl`, `-t`).
 - Fins de ligne : `.gitattributes` impose LF aux scripts et sources
-  (un shebang en CRLF casse l'exécution sous Linux/WSL).
-- **Ne jamais utiliser `Input()`** pour lire stdin : utiliser la couche
-  `ReadStdinLine()` / `SendRawLine()` de `mcp_common/stdio.pbi`.
-- **Architecture** : un serveur inclut `mcp_common/` (ordre : `stdio`,
-  `logging`, `json_helpers`, `http` si besoin, `protocol`, `jsonrpc`),
-  renseigne `G_ServerName`/`G_ServerVersion`, les hooks `*G_ToolHandler` et
-  `*G_CatalogBuilder`, puis appelle `MCPMainLoop()`. Modèle :
-  `examples/minimal_server.pb`.
-- **Aucune duplication** de code stdio/JSON-RPC/HTTP dans un serveur.
+  (un shebang en CRLF casse l'exécution sous Linux/WSL), CRLF aux `.bat`.
+- **Transport HTTP uniquement** : ne pas réintroduire `stdin`/`stdout`,
+  `ReadStdinLine`, `SendRawLine` ou `MCPMainLoop`. Utiliser
+  `mcp_common/http_server.pbi` et `MCPHttpMainLoop()`. **Pas de SSE** :
+  aucune réponse `text/event-stream`, aucun flux d'événements.
+- **Architecture** : un serveur inclut `mcp_common/` dans l'ordre :
+  `runtime`, `logging`, `json_helpers`, `http` si besoin, `protocol`,
+  `jsonrpc`, `http_server` ; renseigne `G_ServerName`/`G_ServerVersion`, les
+  hooks `*G_ToolHandler` et `*G_CatalogBuilder`, puis appelle
+  `MCPHttpMainLoop(<port>)`. Modèle : `examples/minimal_server.pb`.
+- **Aucune duplication** de code console/JSON-RPC/HTTP dans un serveur.
+- Toute nouvelle route HTTP doit passer par les contrôles de
+  `http_server.pbi` : `Origin`, jeton Bearer si `MCP_HTTP_TOKEN`, taille de
+  corps, `Content-Length`, timeout.
 - Tout nouvel outil MCP doit :
   - être ajouté au catalogue (`BuildToolsCatalog` / `XxxBuildCatalog`) ;
   - avoir son `Case` dans le dispatch ;
@@ -62,14 +69,15 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
 ## Tests
 
 - Unitaires PureBasic : `tests/test_<module>.pb` (framework `tests/unit_test.pbi`).
-- Intégration : `tests/test_mcp.py` (harnais `tests/mcp_client.py` ; mock
-  GitHub dans `tests/mock_github.py` ; PostgreSQL et Context7 live sont
+- Intégration : `tests/test_mcp.py` (harnais HTTP `tests/mcp_client.py` ;
+  mock GitHub dans `tests/mock_github.py` ; PostgreSQL et Context7 live sont
   conditionnels).
-- `run_all` doit être **vert (10/10)** avant toute pull request, y compris
-  les tests de robustesse/performance (`tests/test_robustness.py`).
+- Robustesse/performance : `tests/test_robustness.py` (charge HTTP, corps
+  1 Mio, JSON malformé, port occupé, absence de SSE, perf).
+- `run_all` doit être **vert (10/10)** avant toute pull request.
 
 ## Sécurité
 
 Voir [SECURITY.md](SECURITY.md). Toute modification touchant au confinement
-des chemins, aux garde-fous d'écriture ou à la gestion des secrets exige une
-revue attentive.
+des chemins, aux garde-fous d'écriture, à la couche HTTP (Origin, jeton,
+taille de corps) ou à la gestion des secrets exige une revue attentive.

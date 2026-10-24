@@ -1,5 +1,5 @@
 ; ============================================================================
-;  SERVEUR MCP MINIMAL (DEMO) - PureBasic Console / Stdio
+;  SERVEUR MCP MINIMAL (DEMO) - PureBasic HTTP
 ;  Sert de validation pour la Phase 0 du plan : un serveur "vide" repondant
 ;  correctement a initialize et tools/list (catalogue factice) en moins de
 ;  200 lignes de code metier, grace aux modules mcp_common/.
@@ -9,11 +9,12 @@
 
 EnableExplicit
 
-IncludeFile "../mcp_common/stdio.pbi"
+IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/logging.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
 IncludeFile "../mcp_common/jsonrpc.pbi"
+IncludeFile "../mcp_common/http_server.pbi"
 
 ; ---------------------------------------------------------------------------
 ; Outil factice "ping"
@@ -58,16 +59,18 @@ EndProcedure
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "MinimalMCPServer-PureBasic"
-G_ServerVersion = "1.0.0"
+G_ServerVersion = "2.0.0"
 *G_ToolHandler = @ToolDispatch()
 *G_CatalogBuilder = @BuildToolsCatalog()
 
 LogDebug("Demarrage du serveur minimal de demo")
 
-If Not CheckStdio()
+If Not CheckRuntime()
   End 1
 EndIf
 
-MCPMainLoop()
+If Not MCPHttpMainLoop(8090)
+  End 1
+EndIf
 
 End

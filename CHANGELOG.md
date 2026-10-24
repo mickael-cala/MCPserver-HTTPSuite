@@ -2,9 +2,39 @@
 
 Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [versionnage sémantique](https://semver.org/lang/fr/).
 
-## [Non publié]
+## [2.0.0] - 2026-10-24
 
-### Corrigé (validation Linux/WSL2)
+### Modifié (rupture : transport HTTP JSON, sans SSE)
+- **Transport** : les 8 serveurs passent de JSON-RPC sur stdin/stdout à
+  **JSON-RPC sur HTTP** (`POST /mcp`), avec des réponses `application/json`.
+  Aucun SSE, aucun `text/event-stream`, aucune session `Mcp-Session-Id`.
+  `GET /mcp` et `DELETE /mcp` renvoient `405` (`Allow: POST`).
+- **Nouveau `mcp_common/runtime.pbi`** : remplace `stdio.pbi` ; écriture
+  stderr multi-OS et `CheckRuntime()`. Le code stdin/stdout est supprimé.
+- **Nouveau `mcp_common/http_server.pbi`** : serveur HTTP/1.1 natif
+  (`CreateNetworkServer` / `NetworkServerEvent`), endpoint `POST /mcp`,
+  `GET /health`, parsing `Content-Length`, accumulation multi-paquets, timeout
+  d'inactivité, corps maximal 1 Mio, validation `Origin`, jeton Bearer
+  optionnel, `MCP-Protocol-Version`, réponses JSON et journalisation stderr.
+- **`mcp_common/jsonrpc.pbi`** : `ProcessRequestToJSON()` indépendant du
+  transport ; notifications sans réponse ; erreurs `-32700`, `-32600`,
+  `-32601`, `-32603` ; `initialize` négocie `2025-06-18` / `2025-03-26`.
+- **8 serveurs** : ports par défaut 8101–8108, `MCPHttpMainLoop()`, version
+  `2.0.0`, en-têtes et commentaires alignés sur HTTP.
+- **Scripts** : ajout de `start_all.bat/.sh` et `stop_all.bat/.sh` ; correction
+  du bug de syntaxe de `run_all.sh` (lignes HTML orphelines).
+- **Tests** : `tests/mcp_client.py` réécrit en client HTTP (`GET /health`,
+  `POST /mcp`) ; 18 tests de transport ajoutés (**118 tests d'intégration**) ;
+  robustesse adaptée au HTTP (**21 vérifications**) ; `test_common.pb` couvre
+  le noyau JSON-RPC (**194 tests unitaires** au total).
+- **Documentation** : README, AGENTS, PLAN, ROADMAP, ERRATA, CONTRIBUTING,
+  SECURITY, CODE_OF_CONDUCT et modèles GitHub alignés sur
+  **MCPserver-HTTPSuite** et le transport HTTP.
+- **Validation** : compilation et suite complète vertes sous **Windows**
+  (10/10, 194 unitaires, 21 robustesse/perf, 118 intégration). Validation
+  Linux/macOS de la version 2.0.0 à refaire.
+
+### Corrigé (validation Linux/WSL2, 1.0.x)
 - **`build.sh` / `run_all.sh`** utilisaient les options Windows (`/EXE`,
   `/CONSOLE`, `/UNICODE`) : remplacées par les options Linux/macOS
   (`-o`, `-cl`, `-t`).
@@ -241,4 +271,5 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
 - `isError` MCP fiable : détection étendue (`introuvable`, `refusee`,
   `depasse`).
 
-[1.0.0]: https://github.com/mickael-cala/MCPserver-StdioSuite/releases/tag/v1.0.0
+[2.0.0]: https://github.com/mickael-cala/MCPserver-HTTPSuite/releases/tag/v2.0.0
+[1.0.0]: https://github.com/mickael-cala/MCPserver-HTTPSuite/releases/tag/v1.0.0

@@ -1,16 +1,17 @@
 ; ============================================================================
 ;  test_common.pb - Tests unitaires des modules communs mcp_common/
-;  Couvre : json_helpers (arguments, proprietes), DetectIsError.
+;  Couvre : json_helpers (arguments, proprietes), DetectIsError,
+;  protocole MCP et noyau JSON-RPC transport-agnostique.
 ; ============================================================================
-;  Compilation : lance par tests/run_all.bat / run_all.sh (ou manuellement)
+;  Compilation : lance par run_all.bat / run_all.sh (ou manuellement)
 ; ============================================================================
 
 EnableExplicit
 
-IncludeFile "../mcp_common/stdio.pbi"
+IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
-IncludeFile "../mcp_common/jsonrpc.pbi"  ; DetectIsError
+IncludeFile "../mcp_common/jsonrpc.pbi"
 IncludeFile "../tests/unit_test.pbi"
 
 ; ---------------------------------------------------------------------------
@@ -74,15 +75,136 @@ Procedure TestSchemaBuilders()
 EndProcedure
 
 ; ---------------------------------------------------------------------------
+; Catalogue et dispatch factices pour tester le noyau JSON-RPC
+; ---------------------------------------------------------------------------
+Procedure.i TestCatalogBuilder()
+  Protected J.i = CreateJSON(#PB_Any)
+  Protected Root.i = SetJSONObject(JSONValue(J))
+  Protected ToolsArr.i = AddJSONMember(Root, "tools")
+  SetJSONArray(ToolsArr)
+  ToolDef(ToolsArr, "echo", "Repete le texte recu.", "text|string|Texte a repeter", "text")
+  ProcedureReturn J
+EndProcedure
+
+Procedure.s TestToolHandler(ToolName.s, ArgsObj.i, *IsError.Integer)
+  Select ToolName
+    Case "echo"
+      ProcedureReturn GetArgString(ArgsObj, "text")
+    Case "fail"
+      *IsError\i = #True
+      ProcedureReturn "Erreur : echec de test"
+    Default
+      *IsError\i = #True
+      ProcedureReturn "Outil inconnu : " + ToolName
+  EndSelect
+EndProcedure
+
+; ---------------------------------------------------------------------------
+; Helpers de lecture des reponses JSON-RPC
+; ---------------------------------------------------------------------------
+Procedure.i RespErrorCode(Json.s)
+  Protected J.i = ParseJSON(#PB_Any, Json)
+  If J = 0 : ProcedureReturn -9999 : EndIf
+  Protected ErrObj.i = GetJSONMember(JSONValue(J), "error")
+  Protected Code.i = -8888
+  If ErrObj And JSONType(ErrObj) = #PB_JSON_Object
+    Code = GetJSONInteger(GetJSONMember(ErrObj, "code"))
+  EndIf
+  FreeJSON(J)
+  ProcedureReturn Code
+EndProcedure
+
+Procedure.s RespToolText(Json.s)
+  Protected J.i = ParseJSON(#PB_Any, Json)
+  If J = 0 : ProcedureReturn "" : EndIf
+  Protected Result.i = GetJSONMember(JSONValue(J), "result")
+  Protected Text.s = ""
+  If Result And JSONType(Result) = #PB_JSON_Object
+    Protected Content.i = GetJSONMember(Result, "content")
+    If Content And JSONType(Content) = #PB_JSON_Array And JSONArraySize(Content) > 0
+      Protected Item.i = GetJSONElement(Content, 0)
+      Text = GetJSONString(GetJSONMember(Item, "text"))
+    EndIf
+  EndIf
+  FreeJSON(J)
+  ProcedureReturn Text
+EndProcedure
+
+; ---------------------------------------------------------------------------
+; Protocole MCP : versions supportees (HTTP JSON, sans SSE)
+; ---------------------------------------------------------------------------
+Procedure TestProtocolVersions()
+  UTAssert(1, IsSupportedProtocolVersion("2025-06-18"), "version 2025-06-18 supportee")
+  UTAssert(1, IsSupportedProtocolVersion("2025-03-26"), "version 2025-03-26 supportee")
+  UTAssert(0, IsSupportedProtocolVersion("2024-11-05"), "version 2024-11-05 refusee (pas de SSE)")
+  UTAssert(0, IsSupportedProtocolVersion(""), "version vide refusee")
+EndProcedure
+
+; ---------------------------------------------------------------------------
+; Noyau JSON-RPC
+; ---------------------------------------------------------------------------
+Procedure TestJsonRpc()
+  Protected R.s, J.i, Root.i, Res.i, Arr.i
+
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}")
+  J = ParseJSON(#PB_Any, R)
+  UTAssert(1, Bool(J <> 0), "JSON-RPC initialize : reponse JSON")
+  Root = JSONValue(J)
+  Res = GetJSONMember(Root, "result")
+  UTAssertStr("2025-06-18", GetJSONString(GetJSONMember(Res, "protocolVersion")), "JSON-RPC initialize : version")
+  UTAssert(1, Bool(GetJSONMember(Res, "serverInfo") <> 0), "JSON-RPC initialize : serverInfo")
+  FreeJSON(J)
+
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
+  J = ParseJSON(#PB_Any, R)
+  Root = JSONValue(J)
+  Res = GetJSONMember(Root, "result")
+  Arr = GetJSONMember(Res, "tools")
+  UTAssert(1, JSONArraySize(Arr), "JSON-RPC tools/list : 1 outil")
+  UTAssertStr("echo", GetJSONString(GetJSONMember(GetJSONElement(Arr, 0), "name")), "JSON-RPC tools/list : nom echo")
+  FreeJSON(J)
+
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"ping\"}")
+  J = ParseJSON(#PB_Any, R)
+  UTAssertStr("abc", GetJSONString(GetJSONMember(JSONValue(J), "id")), "JSON-RPC : id string preserve")
+  FreeJSON(J)
+
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"bonjour\"}}}")
+  UTAssertStr("bonjour", RespToolText(R), "JSON-RPC tools/call : texte")
+  J = ParseJSON(#PB_Any, R)
+  Res = GetJSONMember(JSONValue(J), "result")
+  UTAssert(0, GetJSONBoolean(GetJSONMember(Res, "isError")), "JSON-RPC tools/call : isError false")
+  FreeJSON(J)
+
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"fail\",\"arguments\":{}}}")
+  J = ParseJSON(#PB_Any, R)
+  Res = GetJSONMember(JSONValue(J), "result")
+  UTAssert(1, GetJSONBoolean(GetJSONMember(Res, "isError")), "JSON-RPC tools/call : isError true")
+  FreeJSON(J)
+
+  UTAssertStr("", ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"), "JSON-RPC notification : pas de reponse")
+  UTAssert(-32601, RespErrorCode(ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"inconnue\"}")), "JSON-RPC methode inconnue : -32601")
+  UTAssert(-32700, RespErrorCode(ProcessRequestToJSON("{")), "JSON-RPC JSON invalide : -32700")
+  UTAssert(-32600, RespErrorCode(ProcessRequestToJSON("[]")), "JSON-RPC lot : -32600")
+EndProcedure
+
+; ---------------------------------------------------------------------------
 ; Programme principal
 ; -------------------------------------------------------------------
-If Not CheckStdio()
+G_ServerName = "TestMCPServer-PureBasic"
+G_ServerVersion = "2.0.0"
+*G_ToolHandler = @TestToolHandler()
+*G_CatalogBuilder = @TestCatalogBuilder()
+
+If Not CheckRuntime()
   End 1
 EndIf
 
 TestGetArgs()
 TestDetectIsError()
 TestSchemaBuilders()
+TestProtocolVersions()
+TestJsonRpc()
 
 UTFinalize()
 

@@ -1,19 +1,21 @@
 ; ============================================================================
-;  SERVEUR MCP - Fetch (PureBasic Console / Stdio)
+;  SERVEUR MCP - Fetch (PureBasic HTTP)
 ;  Recuperation de pages web + conversion HTML -> Markdown
 ; ============================================================================
 ;  Compilation : build.bat / build.sh (ou Options du compilateur -> Console)
-;  Transport   : JSON-RPC 2.0 sur stdin / stdout (delimite par \n)
-;  Modules     : mcp_common/ (stdio, logging, json_helpers, protocol, jsonrpc)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Modules     : mcp_common/ (runtime, logging, json_helpers, protocol,
+;                jsonrpc, http_server)
 ; ============================================================================
 
 EnableExplicit
 
-IncludeFile "../mcp_common/stdio.pbi"
+IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/logging.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
 IncludeFile "../mcp_common/jsonrpc.pbi"
+IncludeFile "../mcp_common/http_server.pbi"
 
 ; ---------------------------------------------------------------------------
 ; Validation d'URL et garde-fous de securite
@@ -296,14 +298,16 @@ EndProcedure
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "FetchMCPServer-PureBasic"
-G_ServerVersion = "1.0.0"
+G_ServerVersion = "2.0.0"
 *G_ToolHandler = @ToolDispatch()
 *G_CatalogBuilder = @BuildToolsCatalog()
 
-If Not CheckStdio()
+If Not CheckRuntime()
   End 1
 EndIf
 
-MCPMainLoop()
+If Not MCPHttpMainLoop(8102)
+  End 1
+EndIf
 
 End

@@ -1,19 +1,21 @@
 ; ============================================================================
-;  SERVEUR MCP - PureBasic (Console / Stdio) - 100 % Natif (Sans DLL / API)
+;  SERVEUR MCP - PureBasic (HTTP) - 100 % Natif (Sans DLL / API)
 ;  Gestion de fichiers confinee a une racine autorisee (MCP_ROOT)
 ; ============================================================================
 ;  Compilation : build.bat / build.sh (ou Options du compilateur -> Console)
-;  Transport   : JSON-RPC 2.0 sur stdin / stdout (delimite par \n)
-;  Modules     : mcp_common/ (stdio, logging, json_helpers, protocol, jsonrpc)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Modules     : mcp_common/ (runtime, logging, json_helpers, protocol,
+;                jsonrpc, http_server)
 ; ============================================================================
 
 EnableExplicit
 
-IncludeFile "../mcp_common/stdio.pbi"
+IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/logging.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
 IncludeFile "../mcp_common/jsonrpc.pbi"
+IncludeFile "../mcp_common/http_server.pbi"
 
 Global G_AllowedRoot.s
 Global G_RootSecret.s
@@ -473,7 +475,7 @@ EndProcedure
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "FileMCPServer-PureBasic"
-G_ServerVersion = "1.0.0"
+G_ServerVersion = "2.0.0"
 *G_ToolHandler = @ToolDispatch()
 *G_CatalogBuilder = @BuildToolsCatalog()
 
@@ -485,10 +487,12 @@ G_AllowedRoot = NormalizePath(G_AllowedRoot)
 
 G_RootSecret = GetEnvironmentVariable("MCP_ROOT_SECRET")
 
-If Not CheckStdio()
+If Not CheckRuntime()
   End 1
 EndIf
 
-MCPMainLoop()
+If Not MCPHttpMainLoop(8101)
+  End 1
+EndIf
 
 End
