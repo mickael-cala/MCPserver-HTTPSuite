@@ -15,18 +15,23 @@
 
 ## Limitations par design (transport HTTP)
 
-- **Aucun SSE** : le serveur ne renvoie jamais `text/event-stream` et n'ouvre
-  aucun flux d'événements. `GET /mcp` et `DELETE /mcp` renvoient `405`.
-  Un client qui exige SSE ne peut pas utiliser cette suite.
-- **Serveur sans état** : pas de `Mcp-Session-Id`, pas de reprise de session,
-  pas de notification serveur→client. Chaque requête est indépendante.
-- **Une requête par connexion** (`Connection: close`) : pas de keep-alive,
-  pas de pipelining. Chaque appel HTTP rouvre une connexion TCP locale.
+- **SSE optionnel, jamais imposé** : `GET /mcp` avec
+  `Accept: text/event-stream` ouvre un flux `text/event-stream` (commentaire
+  `: connected`, puis `: keep-alive` toutes les 15 s). Sans cet en-tête,
+  `GET /mcp` renvoie `405`. `POST /mcp` répond en SSE si le client l'accepte,
+  sinon en JSON. `DELETE /mcp` renvoie `204`.
+- **Pas de messages JSON-RPC serveur→client sur le flux SSE** : le flux sert
+  uniquement de canal de compatibilité et d'acquittement (commentaires
+  keep-alive). Pas de notifications serveur, pas de sampling/roots.
+- **Serveur sans état** : pas de `Mcp-Session-Id`, pas de reprise de session.
+  Chaque requête POST est indépendante.
+- **POST : une requête par connexion** (`Connection: close`) ; **GET SSE** :
+  flux persistant. Pas de pipelining HTTP.
 - **Traitement séquentiel** : un seul appel d'outil à la fois par processus.
   Un outil long (fetch, git, GitHub) bloque les autres requêtes du même
   serveur, y compris `/health`.
-- **Pas de streaming de résultats** : la réponse complète est envoyée d'un
-  bloc (`Content-Length`).
+- **Pas de streaming de résultats d'outil** : la réponse complète est envoyée
+  d'un bloc (`Content-Length` en JSON, un événement `message` en SSE).
 - **Pas de `Transfer-Encoding: chunked`** : le client doit envoyer
   `Content-Length` (`501` sinon).
 - **Corps limité à 1 Mio** par défaut (`MCP_HTTP_MAX_BODY`) : au-delà,
@@ -61,7 +66,7 @@
   drapeau, pas le texte.
 - **Validation** : la version 2.0.0 (HTTP) est compilée et testée sous
   **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, 194 unitaires,
-  21 robustesse/perf, 118 intégration). La validation **macOS** reste à faire.
+  21 robustesse/perf, 120 intégration). La validation **macOS** reste à faire.
 - Aucune CI automatisée (PureBasic sous licence).
 
 ## Résultats des tests
@@ -69,7 +74,7 @@
 Dernières exécutions de `run_all` (Windows et Linux/WSL2) : **10/10 étapes** — tests
 unitaires 41 + 33 + 37 + 19 + 24 + 40 = **194** réussis (mcp_common, Memory,
 Database, Context7, Git, GitHub), robustesse/performance **21/21**,
-tests d'intégration **118/118** (8 serveurs + transport ; PostgreSQL et
+tests d'intégration **120/120** (8 serveurs + transport ; PostgreSQL et
 Context7 live sont ignorés sans configuration/réseau, GitHub utilise un mock
 local).
 

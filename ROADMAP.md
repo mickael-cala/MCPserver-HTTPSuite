@@ -1,7 +1,7 @@
 # Feuille de route
 
 Les 8 serveurs MCP (phases 0 à 7, voir [PLAN.md](PLAN.md)) sont livrés en
-**version 2.0.0** avec un transport **HTTP JSON, sans SSE**.
+**version 2.0.0** avec un transport **HTTP JSON-RPC** et **SSE optionnel**.
 
 ## Court terme
 
@@ -15,6 +15,9 @@ Les 8 serveurs MCP (phases 0 à 7, voir [PLAN.md](PLAN.md)) sont livrés en
 
 ## Moyen terme
 
+- **SSE avancé** : notifications serveur→client, progression d'outils et
+  reprise de flux (`Last-Event-ID`) ; aujourd'hui le flux SSE sert de canal de
+  compatibilité avec keep-alive.
 - **TLS natif optionnel** (`MCP_HTTP_TLS_CERT` / `MCP_HTTP_TLS_KEY`) via
   `UseNetworkTLS()` ; en attendant, recommander un reverse proxy HTTPS.
 - **Concurrence** : traiter plusieurs requêtes en parallèle (threads ou
@@ -35,8 +38,8 @@ Les 8 serveurs MCP (phases 0 à 7, voir [PLAN.md](PLAN.md)) sont livrés en
 
 ## Hors périmètre
 
-- **SSE / `text/event-stream`** : le transport reste HTTP JSON POST, sans flux
-  d'événements. Un client qui exige SSE n'est pas supporté.
+- **SSE obligatoire** : le transport ne force jamais SSE ; un client qui
+  refuse à la fois JSON et SSE n'est pas supporté.
 - **Transport stdio** : remplacé en 2.0.0 ; non maintenu.
-- Sessions persistantes et streaming de résultats : non prévus dans
-  l'immédiat (serveur sans état, une requête par connexion).
+- Sessions persistantes et streaming de résultats d'outils : non prévus dans
+  l'immédiat (serveur sans état, une requête POST par connexion).

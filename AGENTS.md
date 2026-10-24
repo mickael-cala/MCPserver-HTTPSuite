@@ -22,7 +22,7 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
    ```
    Attendu : **10/10 étapes**, **194 tests unitaires**
    (41+33+37+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
-   et **118/118 tests d'intégration**. Si ce n'est pas le cas, corriger avant
+   et **120/120 tests d'intégration**. Si ce n'est pas le cas, corriger avant
    toute nouvelle fonctionnalité.
 4. **Choisir la suite** : voir [ROADMAP.md](ROADMAP.md). Ne jamais démarrer
    une phase sans avoir vert `run_all`.
@@ -37,8 +37,8 @@ export PBCOMPILER=$HOME/purebasic-demo/purebasic_demo/compilers/pbcompiler
 export PUREBASIC_HOME=$HOME/purebasic-demo/purebasic_demo
 ./build.sh && ./run_all.sh
 ```
-Attendu : 10/10 étapes (194 unitaires, 21 robustesse/perf, 118 intégration).
-Validé sous WSL2 Ubuntu 26.04 le 2026-10-24 : 10/10, 194, 21, 118.
+Attendu : 10/10 étapes (194 unitaires, 21 robustesse/perf, 120 intégration).
+Validé sous WSL2 Ubuntu 26.04 le 2026-10-24 : 10/10, 194, 21, 120.
 Attention : `build/` est partagé avec Windows si le dépôt est sur `/mnt/c` —
 relancer `build.bat` après une validation Linux.
 
@@ -99,22 +99,30 @@ git push                       # uniquement si l'utilisateur le demande
 - `gitMCP.pb` + `git_core.pbi` — exploration de dépôts git locaux (sous-processus git)
 - `githubMCP.pb` + `github_core.pbi` — API REST GitHub (`MCP_GITHUB_TOKEN`, mock pour les tests)
 
-Transport **JSON-RPC 2.0 sur HTTP**, endpoint `POST /mcp`, réponse
-`application/json`. **Aucun SSE** : pas de `text/event-stream`, pas de flux
-d'événements, pas de session `Mcp-Session-Id`. `GET /mcp` et `DELETE /mcp`
-renvoient `405` (`Allow: POST`). Chaque processus écoute par défaut sur
-`127.0.0.1` avec un port distinct (8101 à 8108, surchargeable via
-`MCP_HTTP_PORT`). `GET /health` expose l'état.
+Transport **JSON-RPC 2.0 sur HTTP**, endpoint `POST /mcp`. Le serveur répond
+en `application/json` par défaut et propose **SSE optionnel** : `GET /mcp` avec
+`Accept: text/event-stream` ouvre un flux `text/event-stream` ; sans cet en-tête,
+`GET /mcp` renvoie `405`. `POST /mcp` répond en SSE si le client l'accepte,
+sinon en JSON. `DELETE /mcp` renvoie `204` (serveur sans état, pas de
+`Mcp-Session-Id`). Chaque processus écoute par défaut sur `127.0.0.1` avec un
+port distinct (8101 à 8108, surchargeable via `MCP_HTTP_PORT`). `GET /health`
+expose l'état.
 
 Exécutables **console**, 100 % natifs, multi-OS (Windows / Linux / macOS).
 Le cœur métier d'un serveur va dans `src/<serveur>_core.pbi` (testable), le
 `.pb` ne contient que le `main` (lecture d'env + hooks + `MCPHttpMainLoop()`).
 
-## Transport HTTP : règles non négociables
+## Transport HTTP : règles
 
-- **Pas de SSE.** Ne jamais répondre `text/event-stream`, ne jamais ouvrir de
-  flux d'événements. Le client envoie un POST JSON et reçoit un JSON.
-- **Une requête par connexion** (`Connection: close`), pas de keep-alive.
+- **SSE optionnel, jamais imposé.** `GET /mcp` n'ouvre un flux que si le client
+  envoie `Accept: text/event-stream` ; sinon `405`. `POST /mcp` répond en JSON
+  si le client n'accepte pas SSE. Ne jamais forcer un flux.
+- **Deux modes de réponse POST** : JSON direct (`application/json`) ou un
+  événement SSE (`event: message` + `data: <JSON-RPC>`). Le choix dépend de
+  `Accept`.
+- **POST : une requête par connexion** (`Connection: close`). **GET SSE** :
+  flux persistant, commentaire `: connected` puis `: keep-alive` toutes les
+  15 s.
 - **`Content-Length` obligatoire** pour POST ; `Transfer-Encoding: chunked`
   est refusé (`501`).
 - **Corps maximal** 1 Mio par défaut (`MCP_HTTP_MAX_BODY`), réponse `413`.
@@ -122,8 +130,8 @@ Le cœur métier d'un serveur va dans `src/<serveur>_core.pbi` (testable), le
 - **Erreurs JSON-RPC** (`-32700`, `-32600`, `-32601`, `-32603`) : HTTP `200`
   avec un objet `error` ; les erreurs de transport utilisent les codes 4xx/5xx.
 - **Sécurité réseau** : bind loopback par défaut, validation `Origin`, jeton
-  Bearer optionnel (`MCP_HTTP_TOKEN`). Toute nouvelle route doit passer par
-  ces contrôles.
+  Bearer optionnel (`MCP_HTTP_TOKEN`). Les routes `GET` SSE et `POST /mcp`
+  doivent passer par ces contrôles.
 - **Traitement séquentiel** : un seul appel d'outil à la fois par processus.
   Ne pas introduire de threads sans revoir la sécurité et les tests.
 
@@ -138,7 +146,7 @@ stop_all.bat           # Windows : arrête les 8 serveurs
 ./stop_all.sh          # Linux/macOS : idem
 run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + intégration + report.html
 ./run_all.sh           # idem sous Linux/macOS
-python tests/test_mcp.py [serveur]   # intégration seule (118 tests)
+python tests/test_mcp.py [serveur]   # intégration seule (120 tests)
 ./clean.sh             # nettoie build/
 ```
 
@@ -154,6 +162,7 @@ IncludeFile "../mcp_common/http.pbi"           ; client HTTP (API web, optionnel
 IncludeFile "../mcp_common/protocol.pbi"       ; identité + initialize
 IncludeFile "../mcp_common/jsonrpc.pbi"        ; noyau JSON-RPC
 IncludeFile "../mcp_common/http_server.pbi"    ; serveur HTTP + MCPHttpMainLoop
+; http_server.pbi inclut automatiquement http_sse.pbi (SSE optionnel).
 ```
 
 Puis : renseigner `G_ServerName`/`G_ServerVersion`, affecter
@@ -190,8 +199,9 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
    validation anti-injection (`GitSafeParam`, `GhSafeSegment`).
 8. Ne jamais élargir le périmètre de sécurité sans demande explicite.
 9. Les exécutables vont dans `build/` (gitignoré) — jamais de binaire commité.
-10. **Pas de SSE** : toute contribution qui ajoute un flux d'événements ou un
-    endpoint `text/event-stream` est hors périmètre.
+10. **SSE optionnel** : tout ajout SSE doit rester opt-in via `Accept:
+    text/event-stream`, ne jamais l'imposer, et passer par les contrôles
+    `Origin`/jeton. Le mode JSON direct reste la valeur par défaut.
 
 ## Pièges PureBasic rencontrés (ne pas les réintroduire)
 
@@ -235,6 +245,10 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
     épuisement (voir `HttpSendBytes`) ;
   - fermer avec `Connection: close` et `CloseNetworkConnection()` ;
   - ne pas oublier `FreeMemory()` de l'état de connexion.
+- **PureBasic Free (demo Linux) : limite d'environ 800 lignes par fichier
+  source.** Garder chaque `.pbi` sous cette limite ; c'est pourquoi le serveur
+  HTTP est scindé en `http_server.pbi` (noyau) et `http_sse.pbi` (SSE
+  optionnel). Un dépassement donne `Source too big for the Free version.`
 - **RunProgram sous Linux** ne gère pas les guillemets dans les arguments :
   écrire un script temporaire (`git_core.pbi` le fait) ou passer par curl -K.
 - **Fins de ligne** : `.gitattributes` impose LF aux `.sh/.py/.pb/.pbi/.md`
@@ -251,13 +265,16 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
   `serverInfo`.
 - `tools/list` : renvoie le catalogue.
 - `notifications/initialized` : pas de réponse JSON-RPC ; HTTP `202`.
-- `GET /mcp` : `405`, **jamais** de SSE.
+- `GET /mcp` : `405` sans `Accept: text/event-stream` ; `200 text/event-stream`
+  avec cet en-tête (flux optionnel).
+- `POST /mcp` : réponse JSON ou SSE selon `Accept`.
+- `DELETE /mcp` : `204` (serveur sans état).
 - Variables d'environnement par serveur : voir README et SECURITY.md.
 
 ## Structure
 
 ```
-mcp_common/                       modules partages (runtime, logging, json_helpers, http, protocol, jsonrpc, http_server)
+mcp_common/                       modules partages (runtime, logging, json_helpers, http, protocol, jsonrpc, http_server, http_sse)
 src/fileMCP.pb                    gestion de fichiers
 src/MCP-Fetch-PB.pb               fetch web
 src/MCP-SequentialThinking-PB.pb  raisonnement sequentiel
@@ -275,7 +292,7 @@ stop_all.bat/.sh                  arret des serveurs
 run_all.bat/run_all.sh            compilation + tests unitaires + integration + rapport
 tests/mcp_client.py               harnais de test externe (client MCP HTTP)
 tests/mock_github.py              mock local de l'API GitHub
-tests/test_mcp.py                 tests d'integration + transport (118 tests)
+tests/test_mcp.py                 tests d'integration + transport (120 tests)
 tests/unit_test.pbi               framework de tests unitaires PureBasic
 tests/test_common.pb              tests unitaires mcp_common (41 tests)
 tests/test_memory.pb              tests unitaires Memory (33 tests)

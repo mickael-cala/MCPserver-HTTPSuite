@@ -4,30 +4,30 @@
 
 | Phase | Sujet | Statut | Livrables |
 |---|---|---|---|
-| **0** | Infrastructure commune et harnais de test | ✅ Terminée | `mcp_common/` (runtime, logging, json_helpers, protocol, jsonrpc, http, http_server), `tests/mcp_client.py`, `tests/unit_test.pbi`, `run_all.bat/.sh`, serveur de démo `examples/minimal_server.pb` |
+| **0** | Infrastructure commune et harnais de test | ✅ Terminée | `mcp_common/` (runtime, logging, json_helpers, protocol, jsonrpc, http, http_server, http_sse), `tests/mcp_client.py`, `tests/unit_test.pbi`, `run_all.bat/.sh`, serveur de démo `examples/minimal_server.pb` |
 | **1** | Memory (SQLite) | ✅ Terminée | `memoryMCP` (9 outils), 33 tests unitaires, 18 tests d'intégration |
 | **2** | Database (SQLite + PostgreSQL) | ✅ Terminée | `dbMCP` (5 outils, garde-fou lecture seule, PostgreSQL optionnel), 37 tests unitaires, 12 tests d'intégration |
 | **3** | Context7 | ✅ Terminée | `context7MCP` (2 outils), WinHTTP + en-têtes, 19 tests unitaires, 7 tests d'intégration (live conditionnel) |
 | **4** | Git | ✅ Terminée | `gitMCP` (7 outils, validation anti-injection), 24 tests unitaires, 12 tests d'intégration |
 | **5** | GitHub | ✅ Terminée | `githubMCP` (10 outils, `confirm=true`, mock local), 40 tests unitaires, 25 tests d'intégration |
 | **6** | Consolidation et tests transverses | ✅ Terminée | `tests/test_robustness.py` (T6.1–T6.15), rapport HTML par serveur, `examples/mcp.json` |
-| **7** | Transport HTTP (sans SSE) | ✅ Terminée | `mcp_common/http_server.pbi`, `runtime.pbi`, `start_all`/`stop_all`, 8 serveurs HTTP, tests transport, v2.0.0 |
+| **7** | Transport HTTP + SSE optionnel | ✅ Terminée | `mcp_common/http_server.pbi` + `http_sse.pbi`, `runtime.pbi`, `start_all`/`stop_all`, 8 serveurs HTTP, tests transport, v2.0.0 |
 
 ## Définition de « terminé » (état actuel)
 
 | Critère | État |
 |---|---|
 | Tests unitaires des modules et serveurs | ✅ 41 + 33 + 37 + 19 + 24 + 40 = **194** (Windows et Linux) |
-| Tests d'intégration (8 serveurs + transport) | ✅ **118/118** |
+| Tests d'intégration (8 serveurs + transport) | ✅ **120/120** |
 | `run_all.bat` / `run_all.sh` vert | ✅ **10/10 étapes** |
 | Robustesse / performances | ✅ **21/21** (T6.14 conditionnel à une clé Context7) |
-| Transport | ✅ HTTP JSON (`POST /mcp`), **aucun SSE** |
+| Transport | ✅ HTTP JSON (`POST /mcp`) + SSE optionnel (`GET /mcp` avec `Accept`) |
 | Erreurs MCP en `isError: true` avec message clair | ✅ heuristique `DetectIsError` + refus explicites |
 | Aucun secret loggé ni renvoyé | ✅ tokens/clés jamais inclus dans les réponses ; logs stderr |
 | Documentation README complète | ✅ (outils, transport, env, build, tests, config client) |
 | Release publiée | ⏳ v2.0.0 à publier |
-| Validation Windows | ✅ 2.0.0 (10/10, 194 unitaires, 21 robustesse/perf, 118 intégration) |
-| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 194, 21, 118) |
+| Validation Windows | ✅ 2.0.0 (10/10, 194 unitaires, 21 robustesse/perf, 120 intégration) |
+| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 194, 21, 120) |
 | Validation macOS | ⏳ à faire (prérequis : `curl`) |
 | Sécurité réseau | ✅ bind loopback, Origin, jeton optionnel, corps borné |
 
@@ -44,13 +44,13 @@
 | `gitMCP` | 8107 | 7 | 24 | 12 | README, SECURITY, ERRATA |
 | `githubMCP` | 8108 | 10 | 40 | 25 | README, SECURITY, ERRATA |
 
-Total : **45 outils**, **194 tests unitaires**, **118 tests d'intégration**
-(dont 18 tests de transport HTTP), **21 vérifications de robustesse/perf**.
+Total : **45 outils**, **194 tests unitaires**, **120 tests d'intégration**
+(dont 20 tests de transport HTTP), **21 vérifications de robustesse/perf**.
 
 ## Détail des phases
 
 ### Phase 0 — Infrastructure (terminée)
-- Modules partagés : `mcp_common/{runtime,logging,json_helpers,protocol,jsonrpc,http,http_server}.pbi`.
+- Modules partagés : `mcp_common/{runtime,logging,json_helpers,protocol,jsonrpc,http,http_server,http_sse}.pbi`.
 - Harnais Python `tests/mcp_client.py` (HTTP, `GET /health`, validation JSON-RPC 2.0, timeout).
 - Framework de tests PureBasic `tests/unit_test.pbi` (asserts, rapport, code de sortie).
 - `run_all` : compilation → tests unitaires → intégration → `tests/report.html`.
@@ -99,7 +99,7 @@ Total : **45 outils**, **194 tests unitaires**, **118 tests d'intégration**
   `MCP_STRESS_REQUESTS`), T6.2 corps 1 Mio → 413, T6.3 JSON malformé,
   T6.4 port déjà utilisé, T6.5 `kill` pendant une requête (base rouverte),
   T6.6 deux instances sur la même base, T6.7 chemin DB invalide,
-  T6.8 coupure réseau Context7, T6.15 absence de SSE.
+  T6.8 coupure réseau Context7, T6.15 SSE non imposé.
 - Performances : T6.9 100 entités (< 500 ms, transaction SQLite),
   T6.10 recherche 10 000 entités (< 200 ms), T6.11 SELECT (< 50 ms),
   T6.12 `git log` 1 000 commits (< 200 ms), T6.13 GitHub mock (< 2 s),
@@ -116,14 +116,16 @@ Total : **45 outils**, **194 tests unitaires**, **118 tests d'intégration**
   `-32603` ; `initialize` négocie `2025-06-18` / `2025-03-26`.
 - **`mcp_common/http_server.pbi`** : serveur HTTP/1.1 natif
   (`CreateNetworkServer`, `NetworkServerEvent`), `POST /mcp`, `GET /health`,
-  `405` sur `GET`/`DELETE /mcp`, **aucun SSE** ; accumulation multi-paquets,
+  **SSE optionnel** (`GET /mcp` avec `Accept: text/event-stream`, `POST` en
+  SSE si accepté) ; `DELETE /mcp` → `204` ; accumulation multi-paquets,
   `Content-Length`, corps max 1 Mio, timeout d'inactivité, `Origin`, jeton
-  Bearer optionnel, `MCP-Protocol-Version`, réponses JSON.
+  Bearer optionnel, `MCP-Protocol-Version`, réponses JSON ou SSE. Le code SSE
+  est scindé dans `http_sse.pbi` (limite PureBasic Free ~800 lignes/fichier).
 - **8 serveurs** : ports 8101–8108, `MCPHttpMainLoop()`, version 2.0.0.
 - **Scripts** : `start_all` / `stop_all` (Windows/Linux), correction du bug de
   syntaxe de `run_all.sh`.
-- **Tests** : `tests/mcp_client.py` réécrit en HTTP ; 18 tests de transport
-  ajoutés (118 au total) ; robustesse adaptée (21 vérifications) ;
+- **Tests** : `tests/mcp_client.py` réécrit en HTTP ; 20 tests de transport
+  ajoutés (120 au total) ; robustesse adaptée (21 vérifications) ;
   `test_common.pb` couvre le noyau JSON-RPC (41 tests).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, CHANGELOG, ERRATA,
   CONTRIBUTING, SECURITY et modèles GitHub alignés sur HTTP.

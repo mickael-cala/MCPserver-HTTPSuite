@@ -1,21 +1,9 @@
 ; ============================================================================
-;  http_server.pbi - Serveur HTTP/1.1 minimal pour MCP (JSON uniquement)
+;  http_server.pbi - Serveur HTTP/1.1 MCP (JSON direct + SSE optionnel)
 ;  Depend de runtime.pbi, logging.pbi, protocol.pbi et jsonrpc.pbi.
-; ============================================================================
-;  - Transport : POST /mcp -> JSON-RPC 2.0, reponse application/json.
-;  - Aucun SSE : GET /mcp et DELETE /mcp renvoient 405 (Allow: POST).
-;  - Sante : GET /health.
-;  - Une requete par connexion (Connection: close), traitement sequentiel.
-;  - Lecture evenementielle : une requete peut arriver en plusieurs paquets.
-;  - Configuration : MCP_HTTP_HOST, MCP_HTTP_PORT, MCP_HTTP_TOKEN,
-;    MCP_HTTP_MAX_BODY, MCP_HTTP_ALLOWED_ORIGINS, MCP_HTTP_LOG_REQUESTS.
-; ============================================================================
+;  Config : MCP_HTTP_HOST, MCP_HTTP_PORT, MCP_HTTP_TOKEN, MCP_HTTP_MAX_BODY,
+;           MCP_HTTP_ALLOWED_ORIGINS, MCP_HTTP_LOG_REQUESTS.
 ;  A inclure apres jsonrpc.pbi :
-;    IncludeFile "../mcp_common/runtime.pbi"
-;    IncludeFile "../mcp_common/logging.pbi"
-;    IncludeFile "../mcp_common/json_helpers.pbi"
-;    IncludeFile "../mcp_common/protocol.pbi"
-;    IncludeFile "../mcp_common/jsonrpc.pbi"
 ;    IncludeFile "../mcp_common/http_server.pbi"
 ; ============================================================================
 
@@ -35,7 +23,10 @@ Global G_HttpAllowedOrigins.s = ""
 Global G_HttpLogRequests.i = #False
 Global G_HttpLastStatus.i = 0
 Global G_HttpNextTimeoutCheck.i = 0
+Global G_HttpSseStarted.i = #False
+Global G_HttpNextSseCheck.i = 0
 Global NewMap G_HttpHeaders.s()
+Global NewMap G_SseClients.s()
 
 ; Etat d'une connexion en cours de lecture (requete partielle).
 Structure HttpConnState
@@ -52,6 +43,13 @@ Structure HttpConnState
 EndStructure
 
 Global NewMap G_HttpConns.HttpConnState()
+
+; Procedures SSE definies dans http_sse.pbi (inclus en fin de fichier).
+Declare.i HttpAcceptSse()
+Declare HttpStartSse(Client.i)
+Declare HttpSendSseResponse(Client.i, Body.s)
+Declare HttpRemoveSse(Client.i)
+Declare HttpCheckSseKeepalive()
 
 ; ---------------------------------------------------------------------------
 ; Configuration
@@ -92,7 +90,6 @@ Procedure.i HttpLoadConfig(DefaultPort.i)
   G_HttpLogRequests = Bool(GetEnvironmentVariable("MCP_HTTP_LOG_REQUESTS") = "1")
   ProcedureReturn #True
 EndProcedure
-
 Procedure.i HttpIsLoopbackHost(Host.s)
   Host = LCase(Trim(Host))
   ProcedureReturn Bool(Host = "127.0.0.1" Or Host = "::1" Or Host = "localhost")
@@ -123,7 +120,6 @@ Procedure.s HttpStatusText(Status.i)
     Default   : ProcedureReturn "Error"
   EndSelect
 EndProcedure
-
 Procedure.i HttpSendBytes(Client.i, *Mem, Size.i)
   If Size <= 0 : ProcedureReturn #True : EndIf
   Protected SentTotal.i = 0
@@ -141,18 +137,18 @@ Procedure.i HttpSendBytes(Client.i, *Mem, Size.i)
   Wend
   ProcedureReturn #True
 EndProcedure
-
-Procedure HttpSendText(Client.i, Text.s)
+Procedure.i HttpSendText(Client.i, Text.s)
   Protected Size.i = StringByteLength(Text, #PB_UTF8)
-  If Size = 0 : ProcedureReturn : EndIf
+  If Size = 0 : ProcedureReturn #True : EndIf
+  Protected Ok.i = #False
   Protected *Mem = AllocateMemory(Size)
   If *Mem
     PokeS(*Mem, Text, -1, #PB_UTF8 | #PB_String_NoZero)
-    HttpSendBytes(Client, *Mem, Size)
+    Ok = HttpSendBytes(Client, *Mem, Size)
     FreeMemory(*Mem)
   EndIf
+  ProcedureReturn Ok
 EndProcedure
-
 Procedure HttpSendResponse(Client.i, Status.i, ContentType.s, Body.s, ExtraHeaders.s = "")
   G_HttpLastStatus = Status
   Protected BodyLen.i = StringByteLength(Body, #PB_UTF8)
@@ -186,7 +182,6 @@ Procedure HttpSendResponse(Client.i, Status.i, ContentType.s, Body.s, ExtraHeade
   HttpSendBytes(Client, *Mem, TotalLen)
   FreeMemory(*Mem)
 EndProcedure
-
 Procedure HttpSendError(Client.i, Status.i, Message.s, ExtraHeaders.s = "")
   Protected J.i = CreateJSON(#PB_Any)
   If J = 0
@@ -211,7 +206,6 @@ Procedure HttpConnFree(*C.HttpConnState)
   *C\Cap = 0
   *C\Len = 0
 EndProcedure
-
 Procedure HttpRemoveConn(Client.i)
   Protected Key.s = Str(Client)
   Protected *C.HttpConnState = FindMapElement(G_HttpConns(), Key)
@@ -220,12 +214,10 @@ Procedure HttpRemoveConn(Client.i)
     DeleteMapElement(G_HttpConns())
   EndIf
 EndProcedure
-
 Procedure HttpCloseConn(Client.i)
   HttpRemoveConn(Client)
   CloseNetworkConnection(Client)
 EndProcedure
-
 Procedure.i HttpConnEnsure(Client.i)
   Protected Key.s = Str(Client)
   Protected *C.HttpConnState = FindMapElement(G_HttpConns(), Key)
@@ -253,7 +245,6 @@ Procedure.i HttpConnEnsure(Client.i)
   *C\Path = ""
   ProcedureReturn #True
 EndProcedure
-
 Procedure.i HttpConnGrow(*C.HttpConnState, Needed.i)
   If Needed <= *C\Cap : ProcedureReturn #True : EndIf
   Protected *New = ReAllocateMemory(*C\Buf, Needed)
@@ -355,7 +346,6 @@ Procedure.i HttpOriginAllowed(Origin.s)
   EndIf
   ProcedureReturn #False
 EndProcedure
-
 Procedure.i HttpTokenAllowed(AuthHeader.s)
   If G_HttpToken = "" : ProcedureReturn #True : EndIf
   Protected A.s = Trim(AuthHeader)
@@ -378,13 +368,12 @@ Procedure HttpSendHealth(Client.i)
   SetJSONString(AddJSONMember(Root, "server"), G_ServerName)
   SetJSONString(AddJSONMember(Root, "version"), G_ServerVersion)
   SetJSONString(AddJSONMember(Root, "transport"), "http")
-  SetJSONBoolean(AddJSONMember(Root, "sse"), #False)
+  SetJSONBoolean(AddJSONMember(Root, "sse"), #True)
   SetJSONString(AddJSONMember(Root, "protocol"), G_McpProtocolVersion)
   Protected Body.s = ComposeJSON(J)
   FreeJSON(J)
   HttpSendResponse(Client, 200, "application/json; charset=utf-8", Body)
 EndProcedure
-
 Procedure HttpHandleMcp(Client.i, Body.s)
   If Body = ""
     HttpSendError(Client, 400, "Corps JSON-RPC vide.")
@@ -394,6 +383,9 @@ Procedure HttpHandleMcp(Client.i, Body.s)
   If Resp = ""
     ; Notification JSON-RPC : 202 sans corps.
     HttpSendResponse(Client, 202, "", "")
+  ElseIf HttpAcceptSse()
+    ; Le client accepte SSE : reponse en un evenement text/event-stream.
+    HttpSendSseResponse(Client, Resp)
   Else
     HttpSendResponse(Client, 200, "application/json; charset=utf-8", Resp)
   EndIf
@@ -410,7 +402,17 @@ Procedure HttpRoute(Client.i, Method.s, Path.s, Body.s)
       If Path = "/health"
         HttpSendHealth(Client)
       ElseIf Path = "/mcp"
-        HttpSendError(Client, 405, "SSE non supporte : utilisez POST /mcp.", "Allow: POST" + #CRLF$)
+        If Not HttpOriginAllowed(Origin)
+          HttpSendError(Client, 403, "Origine non autorisee : " + Origin)
+        ElseIf Not HttpTokenAllowed(G_HttpHeaders("authorization"))
+          HttpSendError(Client, 401, "Jeton Bearer requis ou invalide.", "WWW-Authenticate: Bearer" + #CRLF$)
+        ElseIf FindMapElement(G_HttpHeaders(), "mcp-protocol-version") And Not IsSupportedProtocolVersion(Trim(G_HttpHeaders("mcp-protocol-version")))
+          HttpSendError(Client, 400, "MCP-Protocol-Version non supportee : " + Trim(G_HttpHeaders("mcp-protocol-version")))
+        ElseIf HttpAcceptSse()
+          HttpStartSse(Client)
+        Else
+          HttpSendError(Client, 405, "SSE non demande : ajoutez Accept: text/event-stream.", "Allow: GET, POST" + #CRLF$)
+        EndIf
       Else
         HttpSendError(Client, 404, "Chemin inconnu : " + Path)
       EndIf
@@ -448,7 +450,8 @@ Procedure HttpRoute(Client.i, Method.s, Path.s, Body.s)
 
     Case "DELETE"
       If Path = "/mcp"
-        HttpSendError(Client, 405, "Sessions non supportees (serveur sans etat).", "Allow: POST" + #CRLF$)
+        ; Serveur sans etat : accepte la fin de session sans effet.
+        HttpSendResponse(Client, 204, "", "", "")
       Else
         HttpSendError(Client, 404, "Chemin inconnu : " + Path)
       EndIf
@@ -544,6 +547,11 @@ EndProcedure
 ; ---------------------------------------------------------------------------
 Procedure HttpConnOnData(Client.i)
   Protected Key.s = Str(Client)
+  ; Un flux SSE est mono-directionnel (serveur -> client) : ignorer les
+  ; eventuelles donnees du client sur cette connexion.
+  If FindMapElement(G_SseClients(), Key)
+    ProcedureReturn
+  EndIf
   Protected Existing.i = Bool(FindMapElement(G_HttpConns(), Key) <> 0)
   If Not Existing And MapSize(G_HttpConns()) >= #HTTP_MAX_CONNS
     HttpSendError(Client, 503, "Trop de connexions simultanees.")
@@ -616,13 +624,20 @@ Procedure HttpConnOnData(Client.i)
   EndIf
 
   G_HttpLastStatus = 0
+  G_HttpSseStarted = #False
   Protected StartMs.i = ElapsedMilliseconds()
   HttpRoute(Client, *C\Method, *C\Path, Body)
   If G_HttpLogRequests
     LogDebug("HTTP " + *C\Method + " " + *C\Path + " -> " + Str(G_HttpLastStatus) + " (" + Str(ElapsedMilliseconds() - StartMs) + " ms)")
   EndIf
 
-  HttpCloseConn(Client)
+  If G_HttpSseStarted
+    ; Le flux SSE reste ouvert : liberer seulement l'etat de requete HTTP.
+    G_HttpSseStarted = #False
+    HttpRemoveConn(Client)
+  Else
+    HttpCloseConn(Client)
+  EndIf
 EndProcedure
 
 ; ---------------------------------------------------------------------------
@@ -670,12 +685,14 @@ Procedure.i MCPHttpMainLoop(DefaultPort.i)
     LogError("ATTENTION : ecoute sur " + G_HttpHost + " sans MCP_HTTP_TOKEN. Definissez un jeton ou utilisez 127.0.0.1.")
   EndIf
 
-  LogDebug("Serveur MCP HTTP a l'ecoute sur http://" + G_HttpHost + ":" + Str(G_HttpPort) + "/mcp (JSON, sans SSE)")
+  LogDebug("Serveur MCP HTTP a l'ecoute sur http://" + G_HttpHost + ":" + Str(G_HttpPort) + "/mcp (JSON, SSE optionnel)")
   LogDebug("Sante : http://" + G_HttpHost + ":" + Str(G_HttpPort) + "/health")
 
   ClearMap(G_HttpConns())
   ClearMap(G_HttpHeaders())
+  ClearMap(G_SseClients())
   G_HttpNextTimeoutCheck = ElapsedMilliseconds() + 500
+  G_HttpNextSseCheck = ElapsedMilliseconds() + 15000
 
   Protected Event.i, Client.i
   Repeat
@@ -687,10 +704,13 @@ Procedure.i MCPHttpMainLoop(DefaultPort.i)
           HttpConnOnData(Client)
         Case #PB_NetworkEvent_Disconnect
           HttpRemoveConn(Client)
+          HttpRemoveSse(Client)
       EndSelect
     Else
       If MapSize(G_HttpConns()) > 0
         Delay(1)
+      ElseIf MapSize(G_SseClients()) > 0
+        Delay(50)
       Else
         Delay(10)
       EndIf
@@ -700,7 +720,15 @@ Procedure.i MCPHttpMainLoop(DefaultPort.i)
       HttpCheckTimeouts()
       G_HttpNextTimeoutCheck = ElapsedMilliseconds() + 500
     EndIf
+
+    If ElapsedMilliseconds() >= G_HttpNextSseCheck
+      HttpCheckSseKeepalive()
+      G_HttpNextSseCheck = ElapsedMilliseconds() + 15000
+    EndIf
   ForEver
 
   ProcedureReturn #True
 EndProcedure
+
+; SSE optionnel (procedures declares ci-dessus, incluses apres le noyau HTTP).
+IncludeFile "../mcp_common/http_sse.pbi"

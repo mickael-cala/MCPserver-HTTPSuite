@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Client MCP de test (harnais externe) - transport HTTP JSON, sans SSE.
+Client MCP de test (harnais externe) - transport HTTP JSON, SSE optionnel.
 
 Lance un serveur MCP en sous-processus, attend GET /health, puis dialogue
-en JSON-RPC 2.0 via POST /mcp (Content-Type: application/json).
+en JSON-RPC 2.0 via POST /mcp (Content-Type: application/json). Le serveur
+peut repondre en JSON direct ou en text/event-stream si le client l'accepte.
 
 Usage :
     from mcp_client import MCPTestClient

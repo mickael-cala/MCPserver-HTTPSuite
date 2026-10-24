@@ -3,7 +3,7 @@
 """
 Tests fonctionnels des serveurs MCP, via le harnais tests/mcp_client.py.
 
-Transport : HTTP JSON-RPC (POST /mcp), sans SSE. Chaque serveur est lance
+Transport : HTTP JSON-RPC (POST /mcp), SSE optionnel. Chaque serveur est lance
 sur un port libre et interroge via GET /health puis POST /mcp.
 
 Serveurs testes :
@@ -29,6 +29,7 @@ Usage :
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 from pathlib import Path
@@ -584,11 +585,30 @@ def run_checks_github(client):
 
 
 # ---------------------------------------------------------------------------
-# Suite transport HTTP (sans SSE)
+# Suite transport HTTP (JSON par defaut, SSE optionnel)
 # ---------------------------------------------------------------------------
 
+def read_sse_headers(client, timeout=3):
+    """Ouvre GET /mcp en SSE et retourne (socket, en-tetes brutes)."""
+    s = socket.create_connection((client.host, client.port), timeout=timeout)
+    s.settimeout(timeout)
+    request = (
+        f"GET /mcp HTTP/1.1\r\n"
+        f"Host: {client.host}:{client.port}\r\n"
+        "Accept: text/event-stream\r\n\r\n"
+    )
+    s.sendall(request.encode("ascii"))
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    return s, data
+
+
 def run_tests_transport():
-    print("\n== Transport HTTP JSON (sans SSE) ==")
+    print("\n== Transport HTTP JSON / SSE optionnel ==")
     with tempfile.TemporaryDirectory(prefix="http-transport-") as tmp:
         env = {"MCP_ROOT": tmp, "MCP_ROOT_SECRET": ROOT_SECRET}
         with MCPTestClient(find_binary("fileMCP"), env=env) as client:
@@ -596,17 +616,41 @@ def run_tests_transport():
             health = json.loads(body.decode("utf-8")) if body else {}
             check("health HTTP 200", status == 200, f"status={status}")
             check("health transport=http", health.get("transport") == "http", str(health))
-            check("health sse=false", health.get("sse") is False, str(health))
+            check("health sse=true", health.get("sse") is True, str(health))
 
             status, body, headers = client.raw_request("GET", "/mcp")
-            check("GET /mcp -> 405", status == 405, f"status={status}")
-            check("GET /mcp Allow POST", "POST" in headers.get("allow", ""), str(headers))
-            check("GET /mcp sans SSE",
+            check("GET /mcp sans Accept -> 405", status == 405, f"status={status}")
+            allow = headers.get("allow", "")
+            check("GET /mcp Allow GET+POST", "GET" in allow and "POST" in allow, allow)
+            check("GET /mcp sans Accept ne force pas SSE",
                   "text/event-stream" not in headers.get("content-type", "").lower(),
                   str(headers))
 
+            sse_sock, sse_data = read_sse_headers(client)
+            try:
+                sse_head = sse_data.split(b"\r\n\r\n", 1)[0].decode("latin-1").lower()
+                check("GET /mcp SSE -> 200 + text/event-stream",
+                      sse_head.startswith("http/1.1 200")
+                      and "content-type: text/event-stream" in sse_head,
+                      sse_head[:200])
+            finally:
+                sse_sock.close()
+
+            status, body, sse_headers = client.raw_request(
+                "POST", "/mcp",
+                body=b'{"jsonrpc":"2.0","id":77,"method":"ping"}',
+                headers={"Content-Type": "application/json",
+                         "Accept": "application/json, text/event-stream"})
+            sse_text = body.decode("utf-8", "replace")
+            check("POST /mcp SSE -> 200 + evenement message",
+                  status == 200
+                  and "text/event-stream" in sse_headers.get("content-type", "")
+                  and "event: message" in sse_text
+                  and '"id":77' in sse_text,
+                  f"status={status}, headers={sse_headers}, body={sse_text[:200]!r}")
+
             status, body, headers = client.raw_request("DELETE", "/mcp")
-            check("DELETE /mcp -> 405", status == 405, f"status={status}")
+            check("DELETE /mcp -> 204", status == 204, f"status={status}")
 
             status, body, headers = client.raw_request(
                 "POST", "/mcp", body=b"{}",

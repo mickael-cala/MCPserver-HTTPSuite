@@ -17,6 +17,12 @@ if [ -z "$PBC" ]; then
     exit 1
 fi
 
+PYTHON="$(command -v python3 || command -v python || true)"
+if [ -z "$PYTHON" ]; then
+    echo "[ERREUR] Python 3 introuvable." >&2
+    exit 1
+fi
+
 STEP_OK=0
 STEP_KO=0
 
@@ -93,7 +99,7 @@ fi
 
 echo
 echo "=== Tests de robustesse et performance (Phase 6) ==="
-if python3 tests/test_robustness.py || python tests/test_robustness.py; then
+if "$PYTHON" tests/test_robustness.py; then
     ok
 else
     ko "robustesse/perf"
@@ -101,7 +107,7 @@ fi
 
 echo
 echo "=== Tests d'integration Python ==="
-if python3 tests/test_mcp.py || python tests/test_mcp.py; then
+if "$PYTHON" tests/test_mcp.py; then
     ok
 else
     ko "tests d'integration"
@@ -111,7 +117,7 @@ echo
 echo "=== Rapport ==="
 echo "Etapes reussies : $STEP_OK, echouees : $STEP_KO"
 
-python3 tests/make_report.py "$STEP_OK" "$STEP_KO" || python tests/make_report.py "$STEP_OK" "$STEP_KO"
+"$PYTHON" tests/make_report.py "$STEP_OK" "$STEP_KO"
 echo "Rapport genere : tests/report.html"
 
 [ "$STEP_KO" -eq 0 ]

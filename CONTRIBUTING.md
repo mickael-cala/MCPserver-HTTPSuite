@@ -3,8 +3,8 @@
 Merci de votre intérêt ! Ce dépôt est un projet personnel, mais les
 signalements de bugs et les suggestions sont les bienvenus.
 
-Le dépôt contient **8 serveurs MCP** (45 outils) exposés en **HTTP JSON**
-(`POST /mcp`, sans SSE) ; voir la liste, les ports et les variables
+Le dépôt contient **8 serveurs MCP** (45 outils) exposés en **HTTP JSON-RPC**
+(`POST /mcp`, SSE optionnel) ; voir la liste, les ports et les variables
 d'environnement dans [README.md](README.md).
 
 ## Signaler un bug ou proposer une fonctionnalité
@@ -15,7 +15,7 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
 - le système d'exploitation et la version de PureBasic ;
 - le serveur concerné, l'URL/le port, la requête JSON-RPC envoyée et la
   réponse HTTP/JSON obtenue ;
-- le résultat de `python tests/test_mcp.py` (118 tests) et/ou
+- le résultat de `python tests/test_mcp.py` (120 tests) et/ou
   `run_all.bat` / `./run_all.sh`.
 
 ## Soumettre une modification
@@ -43,8 +43,10 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
   (un shebang en CRLF casse l'exécution sous Linux/WSL), CRLF aux `.bat`.
 - **Transport HTTP uniquement** : ne pas réintroduire `stdin`/`stdout`,
   `ReadStdinLine`, `SendRawLine` ou `MCPMainLoop`. Utiliser
-  `mcp_common/http_server.pbi` et `MCPHttpMainLoop()`. **Pas de SSE** :
-  aucune réponse `text/event-stream`, aucun flux d'événements.
+  `mcp_common/http_server.pbi` et `MCPHttpMainLoop()`. **SSE optionnel** :
+  `GET /mcp` n'ouvre un flux que si le client envoie
+  `Accept: text/event-stream` ; `POST` répond en JSON par défaut. Ne jamais
+  imposer SSE.
 - **Architecture** : un serveur inclut `mcp_common/` dans l'ordre :
   `runtime`, `logging`, `json_helpers`, `http` si besoin, `protocol`,
   `jsonrpc`, `http_server` ; renseigne `G_ServerName`/`G_ServerVersion`, les
@@ -73,7 +75,7 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
   mock GitHub dans `tests/mock_github.py` ; PostgreSQL et Context7 live sont
   conditionnels).
 - Robustesse/performance : `tests/test_robustness.py` (charge HTTP, corps
-  1 Mio, JSON malformé, port occupé, absence de SSE, perf).
+  1 Mio, JSON malformé, port occupé, SSE non imposé, perf).
 - `run_all` doit être **vert (10/10)** avant toute pull request.
 
 ## Sécurité

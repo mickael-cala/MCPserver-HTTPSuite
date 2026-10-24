@@ -11,7 +11,7 @@ Global G_ServerName.s = "MCP-PB-Server"
 Global G_ServerVersion.s = "2.0.0"
 
 ; Version MCP annoncee par defaut. Le transport est Streamable HTTP
-; JSON uniquement (pas de SSE), disponible a partir de 2025-03-26.
+; (JSON direct par defaut, SSE optionnel), disponible a partir de 2025-03-26.
 Global G_McpProtocolVersion.s = "2025-06-18"
 
 Procedure.i IsSupportedProtocolVersion(V.s)

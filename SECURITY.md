@@ -27,19 +27,22 @@ couche HTTP commune :
 
 ## Surface réseau HTTP
 
-Le transport est **HTTP JSON** (`POST /mcp`), **sans SSE**. Il n'y a pas de
-session serveur, pas de flux d'événements et pas de keep-alive.
+Le transport est **HTTP JSON-RPC** (`POST /mcp`) avec **SSE optionnel**
+(`GET /mcp` + `Accept: text/event-stream`). Il n'y a pas de session serveur.
+Un flux SSE ne transporte que des commentaires keep-alive ; aucun message
+JSON-RPC serveur→client n'y est envoyé.
 
 | Contrôle | Comportement |
 |---|---|
 | Écoute par défaut | `MCP_HTTP_HOST=127.0.0.1` (loopback uniquement) |
-| Authentification | `MCP_HTTP_TOKEN` : `Authorization: Bearer <token>` exigé sur `POST /mcp` ; `401` sinon |
+| Authentification | `MCP_HTTP_TOKEN` : `Authorization: Bearer <token>` exigé sur `POST /mcp` et `GET /mcp` (SSE) ; `401` sinon |
 | Origines | `Origin` absente ou loopback du port courant (`127.0.0.1`, `localhost`, `[::1]`) ; sinon `403`. `MCP_HTTP_ALLOWED_ORIGINS` pour une liste explicite |
 | Taille du corps | 1 Mio par défaut (`MCP_HTTP_MAX_BODY`, borné 1 Kio–16 Mio) ; `413` au-delà |
 | En-têtes | Limite 16 Kio ; `431` au-delà |
 | Timeout | 10 s d'inactivité pour les en-têtes/corps ; `408` |
 | Transfert | `Content-Length` obligatoire pour POST ; `Transfer-Encoding: chunked` refusé (`501`) |
-| Connexions | 64 maximum en cours ; `503` au-delà |
+| Connexions | 64 requêtes en cours et 64 flux SSE maximum ; `503` au-delà |
+| SSE | Flux `text/event-stream` uniquement si demandé ; `Origin` et jeton vérifiés ; keep-alive 15 s ; pas de messages serveur→client |
 | CORS | Aucun `Access-Control-Allow-Origin` ; les navigateurs ne peuvent pas lire les réponses |
 | Journalisation | Méthode, chemin, statut et durée sur **stderr** ; jamais le corps, jamais un secret |
 | TLS | **Non fourni** : utiliser un reverse proxy HTTPS devant le serveur, ou rester sur loopback |
@@ -89,4 +92,4 @@ Voir [CONTRIBUTING.md](CONTRIBUTING.md). Les cas de sécurité sont couverts par
 les tests : traversées de chemins (fileMCP), injection SQL (memory/db),
 injection shell (git), garde `confirm` et gestion d'erreurs (github),
 anti-SSRF (fetch), refus d'écriture SQL (db), `Origin`/jeton/taille de corps
-(transport HTTP), absence de SSE.
+et SSE optionnel sécurisé (transport HTTP).

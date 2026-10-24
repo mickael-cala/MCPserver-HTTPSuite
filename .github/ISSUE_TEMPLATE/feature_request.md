@@ -22,4 +22,5 @@ labels: enhancement
 <!-- L'outil touche-t-il au confinement MCP_ROOT, à la suppression, aux
      fichiers binaires ? Une nouvelle route HTTP est-elle nécessaire (Origin,
      jeton, taille de corps) ? Voir SECURITY.md et ROADMAP.md. Le transport
-     reste HTTP JSON, sans SSE. -->
+     reste HTTP JSON + SSE optionnel. Le SSE n'est jamais imposé. Voir
+     SECURITY.md et ROADMAP.md. -->

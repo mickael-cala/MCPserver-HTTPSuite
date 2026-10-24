@@ -4,18 +4,23 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
 
 ## [2.0.0] - 2026-10-24
 
-### Modifié (rupture : transport HTTP JSON, sans SSE)
+### Modifié (rupture : transport HTTP JSON + SSE optionnel)
 - **Transport** : les 8 serveurs passent de JSON-RPC sur stdin/stdout à
-  **JSON-RPC sur HTTP** (`POST /mcp`), avec des réponses `application/json`.
-  Aucun SSE, aucun `text/event-stream`, aucune session `Mcp-Session-Id`.
-  `GET /mcp` et `DELETE /mcp` renvoient `405` (`Allow: POST`).
+  **JSON-RPC sur HTTP** (`POST /mcp`), avec des réponses `application/json`
+  par défaut. **SSE optionnel** : `GET /mcp` + `Accept: text/event-stream`
+  ouvre un flux ; `POST /mcp` répond en SSE si le client l'accepte. Aucune
+  session `Mcp-Session-Id`. `DELETE /mcp` renvoie `204`.
 - **Nouveau `mcp_common/runtime.pbi`** : remplace `stdio.pbi` ; écriture
   stderr multi-OS et `CheckRuntime()`. Le code stdin/stdout est supprimé.
 - **Nouveau `mcp_common/http_server.pbi`** : serveur HTTP/1.1 natif
   (`CreateNetworkServer` / `NetworkServerEvent`), endpoint `POST /mcp`,
-  `GET /health`, parsing `Content-Length`, accumulation multi-paquets, timeout
-  d'inactivité, corps maximal 1 Mio, validation `Origin`, jeton Bearer
-  optionnel, `MCP-Protocol-Version`, réponses JSON et journalisation stderr.
+  `GET /health`, flux SSE optionnel (`text/event-stream`, keep-alive 15 s),
+  parsing `Content-Length`, accumulation multi-paquets, timeout d'inactivité,
+  corps maximal 1 Mio, validation `Origin`, jeton Bearer optionnel,
+  `MCP-Protocol-Version`, réponses JSON ou SSE et journalisation stderr.
+  Le code SSE est dans **`mcp_common/http_sse.pbi`** (inclus par
+  `http_server.pbi`) pour rester sous la limite de 800 lignes/fichier de
+  PureBasic Free.
 - **`mcp_common/jsonrpc.pbi`** : `ProcessRequestToJSON()` indépendant du
   transport ; notifications sans réponse ; erreurs `-32700`, `-32600`,
   `-32601`, `-32603` ; `initialize` négocie `2025-06-18` / `2025-03-26`.
@@ -24,15 +29,16 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
 - **Scripts** : ajout de `start_all.bat/.sh` et `stop_all.bat/.sh` ; correction
   du bug de syntaxe de `run_all.sh` (lignes HTML orphelines).
 - **Tests** : `tests/mcp_client.py` réécrit en client HTTP (`GET /health`,
-  `POST /mcp`) ; 18 tests de transport ajoutés (**118 tests d'intégration**) ;
-  robustesse adaptée au HTTP (**21 vérifications**) ; `test_common.pb` couvre
-  le noyau JSON-RPC (**194 tests unitaires** au total).
+  `POST /mcp`, SSE optionnel) ; 20 tests de transport ajoutés
+  (**120 tests d'intégration**) ; robustesse adaptée au HTTP
+  (**21 vérifications**) ; `test_common.pb` couvre le noyau JSON-RPC
+  (**194 tests unitaires** au total).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, ERRATA, CONTRIBUTING,
   SECURITY, CODE_OF_CONDUCT et modèles GitHub alignés sur
   **MCPserver-HTTPSuite** et le transport HTTP.
 - **Validation** : compilation et suite complète vertes sous **Windows** et
   **Linux (WSL2 Ubuntu 26.04)** (10/10, 194 unitaires, 21 robustesse/perf,
-  118 intégration). Validation macOS de la version 2.0.0 à faire.
+  120 intégration). Validation macOS de la version 2.0.0 à faire.
 
 ### Corrigé (validation Linux/WSL2, 1.0.x)
 - **`build.sh` / `run_all.sh`** utilisaient les options Windows (`/EXE`,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Phase 6 - Tests de robustesse (T6.1-T6.8), absence de SSE (T6.15) et
+Phase 6 - Tests de robustesse (T6.1-T6.8), SSE non imposé (T6.15) et
 performances (T6.9-T6.14) sur le transport HTTP.
 
 Usage :
@@ -182,16 +182,16 @@ def test_network_cut():
 
 
 # ---------------------------------------------------------------------------
-# T6.15 : le transport ne doit jamais basculer en SSE
+# T6.15 : SSE optionnel, jamais impose sans Accept
 # ---------------------------------------------------------------------------
 
 def test_no_sse():
-    print("\n== T6.15 : absence de SSE ==")
+    print("\n== T6.15 : SSE non impose ==")
     with MCPTestClient(find_binary("fileMCP")) as client:
         status, body, headers = client.raw_request("GET", "/mcp")
         ctype = headers.get("content-type", "")
-        check("T6.15 GET /mcp -> 405", status == 405, f"status={status}")
-        check("T6.15 pas de text/event-stream",
+        check("T6.15 GET /mcp sans Accept -> 405", status == 405, f"status={status}")
+        check("T6.15 pas de text/event-stream sans Accept",
               "text/event-stream" not in ctype.lower(), ctype)
 
 

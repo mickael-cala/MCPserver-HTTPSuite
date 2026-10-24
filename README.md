@@ -1,15 +1,16 @@
-# MCPserver-HTTPSuite — 8 serveurs MCP en PureBasic (HTTP, sans SSE)
+# MCPserver-HTTPSuite — 8 serveurs MCP en PureBasic (HTTP + SSE optionnel)
 
 [![Release](https://img.shields.io/github/v/release/mickael-cala/MCPserver-HTTPSuite)](https://github.com/mickael-cala/MCPserver-HTTPSuite/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Huit serveurs [MCP](https://modelcontextprotocol.io) (Model Context Protocol)
 écrits en **PureBasic**, 100 % natifs, qui exposent **45 outils** à un client IA
-via **JSON-RPC 2.0 sur HTTP**. Le transport est **HTTP JSON uniquement** :
-aucun SSE, aucun flux `text/event-stream`, aucune session persistante.
+via **JSON-RPC 2.0 sur HTTP**. Le serveur répond en **JSON direct par défaut**
+et propose **SSE (`text/event-stream`) en option** lorsque le client l'accepte.
+Aucun flux n'est imposé : le client choisit via l'en-tête `Accept`.
 
 Cette version **2.0.0** est une réécriture du transport : les serveurs qui
 parlaient JSON-RPC sur stdin/stdout exposent désormais un endpoint HTTP
-`POST /mcp`. Le mode stdio n'est plus fourni.
+`POST /mcp` (et un flux SSE optionnel). Le mode stdio n'est plus fourni.
 
 ## Démarrage rapide
 
@@ -51,17 +52,17 @@ port.
 
 | Élément | Valeur |
 |---|---|
-| Endpoint MCP | `POST /mcp` |
+| Endpoint MCP | `POST /mcp` ; `GET /mcp` pour un flux SSE optionnel |
 | Santé | `GET /health` |
-| Version HTTP | HTTP/1.1, une requête par connexion |
+| Version HTTP | HTTP/1.1 |
 | TLS | Non fourni nativement : reverse proxy HTTPS devant le serveur |
 | Content-Type requis | `application/json` (un `charset` est accepté) |
-| Réponse JSON-RPC | `200 application/json` |
+| Réponse JSON-RPC | `200 application/json` ou `200 text/event-stream` selon `Accept` |
 | Notification JSON-RPC | `202 Accepted`, corps vide |
-| SSE | **Jamais** : `GET /mcp` et `DELETE /mcp` renvoient `405` avec `Allow: POST` |
+| SSE | **Optionnel** : `GET /mcp` + `Accept: text/event-stream` ouvre un flux ; sans cet en-tête, `405`. `POST /mcp` répond en SSE si `Accept` le demande |
 | Sessions | Aucune : pas de `Mcp-Session-Id`, serveur sans état |
 | Version MCP | `2025-06-18` par défaut ; `2025-03-26` acceptée en négociation |
-| Connexions | Une requête par connexion (`Connection: close`) |
+| Connexions | POST : une requête par connexion ; GET SSE : flux persistant |
 | Corps maximal | 1 Mio par défaut (`MCP_HTTP_MAX_BODY`) |
 | Traitement | Séquentiel : un appel d'outil à la fois par processus |
 
@@ -76,16 +77,19 @@ curl -s -X POST http://127.0.0.1:8101/mcp \
 Codes HTTP :
 
 - `200` : réponse JSON-RPC (y compris les erreurs JSON-RPC `-32700`,
-  `-32600`, `-32601`, `-32603`) ;
+  `-32600`, `-32601`, `-32603`) ou flux `text/event-stream` ;
 - `202` : notification acceptée, sans corps ;
+- `204` : `DELETE /mcp` accepté sans effet (serveur sans état) ;
 - `400` / `401` / `403` / `405` / `408` / `411` / `413` / `415` / `431` / `500`
   / `501` / `503` : erreurs de transport ou de sécurité, corps JSON
   `{"error": "..."}` ;
 - `404` : chemin inconnu.
 
-Le serveur refuse `Transfer-Encoding: chunked` (utilisez `Content-Length`) et
-ne fait pas de keep-alive. Il n'y a **aucun** endpoint SSE, aucun flux
-d'événements et aucune réponse `text/event-stream`.
+Le serveur refuse `Transfer-Encoding: chunked` (utilisez `Content-Length`).
+Le SSE n'est **jamais imposé** : `GET /mcp` sans `Accept: text/event-stream`
+renvoie `405`, et `POST /mcp` répond en JSON si le client n'accepte pas SSE.
+Les flux SSE ouverts reçoivent un commentaire `: connected` puis des
+`: keep-alive` toutes les 15 secondes.
 
 ## Outils MCP exposés
 
@@ -308,7 +312,7 @@ run_all.bat        # ou ./run_all.sh : tout vérifier
   `tests/test_<module>.pb`.
 - **Intégration (Python)** : `tests/mcp_client.py` (harnais client MCP HTTP
   avec validation de conformité JSON-RPC 2.0) + `tests/test_mcp.py`
-  (**118 tests** qui exercent les outils, le transport HTTP et les cas de
+  (**120 tests** qui exercent les outils, le transport HTTP et les cas de
   sécurité) :
 
 ```bash
@@ -319,7 +323,7 @@ python tests/test_mcp.py memoryMCP       # un seul serveur
 - **Robustesse et performances (Phase 6)** : `tests/test_robustness.py` —
   **21 vérifications** (charge `tools/list`, corps de 1 Mio → 413, JSON
   malformé, port déjà utilisé, kill pendant une requête, deux instances
-  Memory, chemin DB invalide, coupure réseau Context7, absence de SSE,
+  Memory, chemin DB invalide, coupure réseau Context7, SSE non imposé,
   performances T6.9–T6.14) :
 
 ```bash
@@ -332,7 +336,7 @@ variable `<NOM>_BIN` (ex. `FILEMCP_BIN`, `MEMORYMCP_BIN`) force un chemin.
 
 Résultat de référence : `run_all` **10/10 étapes**, **194 tests unitaires**,
 **21 vérifications de robustesse/performance** (T6.14 conditionnel à une clé
-Context7), **118 tests d'intégration**. Validé sous **Windows** et
+Context7), **120 tests d'intégration**. Validé sous **Windows** et
 **Linux (WSL2 Ubuntu 26.04)** ; macOS reste à valider.
 
 ## Configuration d'un client MCP
@@ -402,7 +406,8 @@ mcp_common/               Modules partagés par tous les serveurs MCP
 ├── http.pbi              Client HTTP GET/POST (WinHTTP / curl)
 ├── protocol.pbi          Identité serveur + réponse initialize
 ├── jsonrpc.pbi           Noyau JSON-RPC 2.0 transport-agnostique
-└── http_server.pbi       Serveur HTTP/1.1 JSON (POST /mcp, /health, sans SSE)
+├── http_server.pbi       Serveur HTTP/1.1 (POST/GET /mcp, /health)
+└── http_sse.pbi          SSE optionnel (inclus par http_server.pbi)
 
 src/
 ├── fileMCP.pb                    # Serveur gestion de fichiers
@@ -430,7 +435,7 @@ run_all.bat / run_all.sh    # Compilation + tests + rapport
 tests/
 ├── mcp_client.py           # Harnais de test externe (client MCP HTTP)
 ├── mock_github.py          # Mock local de l'API GitHub (intégration)
-├── test_mcp.py             # Tests fonctionnels + transport (118 tests)
+├── test_mcp.py             # Tests fonctionnels + transport (120 tests)
 ├── unit_test.pbi           # Micro-framework de tests unitaires PureBasic
 ├── test_common.pb          # Tests unitaires des modules mcp_common (41 tests)
 ├── test_memory.pb          # Tests unitaires du serveur Memory (33 tests)
