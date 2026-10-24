@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "file-pb": {
+      "httpUrl": "http://127.0.0.1:8101/mcp"
+    },
+    "fetch-pb": {
+      "httpUrl": "http://127.0.0.1:8102/mcp"
+    },
+    "sequential-thinking-pb": {
+      "httpUrl": "http://127.0.0.1:8103/mcp"
+    },
+    "memory-pb": {
+      "httpUrl": "http://127.0.0.1:8104/mcp"
+    },
+    "db-pb": {
+      "httpUrl": "http://127.0.0.1:8105/mcp"
+    },
+    "context7-pb": {
+      "httpUrl": "http://127.0.0.1:8106/mcp"
+    },
+    "git-pb": {
+      "httpUrl": "http://127.0.0.1:8107/mcp"
+    },
+    "github-pb": {
+      "httpUrl": "http://127.0.0.1:8108/mcp"
+    }
+  }
+}

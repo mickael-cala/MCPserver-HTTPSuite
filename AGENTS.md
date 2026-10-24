@@ -134,6 +134,9 @@ Le cœur métier d'un serveur va dans `src/<serveur>_core.pbi` (testable), le
   doivent passer par ces contrôles.
 - **Traitement séquentiel** : un seul appel d'outil à la fois par processus.
   Ne pas introduire de threads sans revoir la sécurité et les tests.
+- **Qwen Code / Qwen Studio** : utiliser la clé `httpUrl` (Streamable HTTP).
+  La clé `url` désigne l'ancien SSE legacy et attend un événement `endpoint` ;
+  elle ne doit pas être utilisée pour ces serveurs.
 
 ## Commandes essentielles
 
@@ -285,6 +288,7 @@ src/gitMCP.pb + git_core.pbi            exploration git locale
 src/githubMCP.pb + github_core.pbi      API REST GitHub
 examples/minimal_server.pb        serveur MCP HTTP minimal de demo (port 8090)
 examples/mcp.json                 configuration client HTTP complete (8 serveurs)
+examples/qwen-settings.json       configuration Qwen (httpUrl, Streamable HTTP)
 .gitattributes                    fins de ligne (LF scripts/sources, CRLF .bat)
 build.bat/build.sh                compilation des 8 serveurs ; clean.* : nettoyage
 start_all.bat/.sh                 lancement des 8 serveurs en arriere-plan

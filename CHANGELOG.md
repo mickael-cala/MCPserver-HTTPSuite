@@ -35,7 +35,8 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
   (**194 tests unitaires** au total).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, ERRATA, CONTRIBUTING,
   SECURITY, CODE_OF_CONDUCT et modèles GitHub alignés sur
-  **MCPserver-HTTPSuite** et le transport HTTP.
+  **MCPserver-HTTPSuite** et le transport HTTP. Ajout de
+  `examples/qwen-settings.json` (clé `httpUrl`, Streamable HTTP).
 - **Validation** : compilation et suite complète vertes sous **Windows** et
   **Linux (WSL2 Ubuntu 26.04)** (10/10, 194 unitaires, 21 robustesse/perf,
   120 intégration). Validation macOS de la version 2.0.0 à faire.

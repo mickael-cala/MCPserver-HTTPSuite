@@ -396,6 +396,53 @@ documentation. Un client qui ne supporte que stdio ne peut pas se connecter
 directement à cette version : utilisez un client compatible HTTP (Claude
 Desktop récent, Kimi Code, etc.) ou un pont stdio→HTTP externe.
 
+### Qwen Code / Qwen Studio
+
+Qwen distingue deux clés de configuration :
+
+- `httpUrl` : transport **Streamable HTTP** (recommandé pour ces serveurs) ;
+- `url` : ancien transport **SSE legacy**, qui attend un événement `endpoint`.
+
+Utilisez donc `httpUrl`, et non `url` (même avec `"type": "http"`). Exemple
+complet : `examples/qwen-settings.json`.
+
+```json
+{
+  "mcpServers": {
+    "file-pb": {
+      "httpUrl": "http://127.0.0.1:8101/mcp"
+    },
+    "fetch-pb": {
+      "httpUrl": "http://127.0.0.1:8102/mcp"
+    },
+    "sequential-thinking-pb": {
+      "httpUrl": "http://127.0.0.1:8103/mcp"
+    },
+    "memory-pb": {
+      "httpUrl": "http://127.0.0.1:8104/mcp"
+    },
+    "db-pb": {
+      "httpUrl": "http://127.0.0.1:8105/mcp"
+    },
+    "context7-pb": {
+      "httpUrl": "http://127.0.0.1:8106/mcp"
+    },
+    "git-pb": {
+      "httpUrl": "http://127.0.0.1:8107/mcp"
+    },
+    "github-pb": {
+      "httpUrl": "http://127.0.0.1:8108/mcp"
+    }
+  }
+}
+```
+
+Avec `MCP_HTTP_TOKEN`, ajoutez sur chaque serveur :
+
+```json
+"headers": { "Authorization": "Bearer TON_TOKEN" }
+```
+
 ## Structure du dépôt
 
 ```
@@ -426,6 +473,7 @@ src/
 
 examples/minimal_server.pb  # Serveur MCP HTTP minimal de démonstration (port 8090)
 examples/mcp.json           # Configuration client HTTP complète (8 serveurs)
+examples/qwen-settings.json # Configuration Qwen Code / Qwen Studio (httpUrl)
 build.bat / build.sh        # Compilation des 8 serveurs (sortie dans build/)
 start_all.bat / start_all.sh # Lancement des 8 serveurs en arrière-plan
 stop_all.bat / stop_all.sh  # Arrêt des serveurs
