@@ -61,7 +61,7 @@ port.
 | Notification JSON-RPC | `202 Accepted`, corps vide |
 | SSE | **Optionnel** : `GET /mcp` + `Accept: text/event-stream` ouvre un flux ; sans cet en-tête, `405`. `POST /mcp` répond en SSE si `Accept` le demande |
 | Sessions | Aucune : pas de `Mcp-Session-Id`, serveur sans état |
-| Version MCP | `2025-06-18` par défaut ; `2025-03-26` acceptée en négociation |
+| Version MCP | `2025-06-18` annoncée ; `2025-03-26` acceptée ; sans en-tête `MCP-Protocol-Version`, la requête est traitée comme `2025-03-26` |
 | Connexions | POST : une requête par connexion ; GET SSE : flux persistant |
 | Corps maximal | 1 Mio par défaut (`MCP_HTTP_MAX_BODY`) |
 | Traitement | Séquentiel : un appel d'outil à la fois par processus |
@@ -76,12 +76,15 @@ curl -s -X POST http://127.0.0.1:8101/mcp \
 
 Codes HTTP :
 
-- `200` : réponse JSON-RPC (y compris les erreurs JSON-RPC `-32700`,
-  `-32600`, `-32601`, `-32603`) ou flux `text/event-stream` ;
+- `200` : requête JSON-RPC valide (y compris `-32601` méthode inconnue et
+  `-32603` erreur interne) ou flux `text/event-stream` ;
 - `202` : notification acceptée, sans corps ;
 - `204` : `DELETE /mcp` accepté sans effet (serveur sans état) ;
-- `400` / `401` / `403` / `405` / `408` / `411` / `413` / `415` / `431` / `500`
-  / `501` / `503` : erreurs de transport ou de sécurité, corps JSON
+- `400` : entrée invalide — JSON invalide (`-32700`), lot JSON-RPC ou réponse
+  JSON-RPC envoyée par le client (`-32600`), `MCP-Protocol-Version` non
+  supportée ;
+- `401` / `403` / `405` / `408` / `411` / `413` / `415` / `431` / `500` / `501`
+  / `503` : erreurs de transport ou de sécurité, corps JSON
   `{"error": "..."}` ;
 - `404` : chemin inconnu.
 
@@ -306,13 +309,13 @@ run_all.bat        # ou ./run_all.sh : tout vérifier
 ```
 
 - **Unitaires (PureBasic)** : `tests/unit_test.pbi` (micro-framework) +
-  6 suites (`tests/test_common.pb` 41, `test_memory.pb` 33, `test_database.pb`
+  6 suites (`tests/test_common.pb` 46, `test_memory.pb` 33, `test_database.pb`
   37, `test_context7.pb` 19, `test_git.pb` 24, `test_github.pb` 40 — soit
-  **194 tests** hors réseau). Chaque futur module ajoute un
+  **199 tests** hors réseau). Chaque futur module ajoute un
   `tests/test_<module>.pb`.
 - **Intégration (Python)** : `tests/mcp_client.py` (harnais client MCP HTTP
   avec validation de conformité JSON-RPC 2.0) + `tests/test_mcp.py`
-  (**120 tests** qui exercent les outils, le transport HTTP et les cas de
+  (**121 tests** qui exercent les outils, le transport HTTP et les cas de
   sécurité) :
 
 ```bash
@@ -334,9 +337,9 @@ MCP_STRESS_REQUESTS=10000 python tests/test_robustness.py   # charge complète
 Le binaire de chaque serveur est cherché dans `build/`, puis `src/` ; la
 variable `<NOM>_BIN` (ex. `FILEMCP_BIN`, `MEMORYMCP_BIN`) force un chemin.
 
-Résultat de référence : `run_all` **10/10 étapes**, **194 tests unitaires**,
+Résultat de référence : `run_all` **10/10 étapes**, **199 tests unitaires**,
 **21 vérifications de robustesse/performance** (T6.14 conditionnel à une clé
-Context7), **120 tests d'intégration**. Validé sous **Windows** et
+Context7), **121 tests d'intégration**. Validé sous **Windows** et
 **Linux (WSL2 Ubuntu 26.04)** ; macOS reste à valider.
 
 ## Configuration d'un client MCP
@@ -483,9 +486,9 @@ run_all.bat / run_all.sh    # Compilation + tests + rapport
 tests/
 ├── mcp_client.py           # Harnais de test externe (client MCP HTTP)
 ├── mock_github.py          # Mock local de l'API GitHub (intégration)
-├── test_mcp.py             # Tests fonctionnels + transport (120 tests)
+├── test_mcp.py             # Tests fonctionnels + transport (121 tests)
 ├── unit_test.pbi           # Micro-framework de tests unitaires PureBasic
-├── test_common.pb          # Tests unitaires des modules mcp_common (41 tests)
+├── test_common.pb          # Tests unitaires des modules mcp_common (46 tests)
 ├── test_memory.pb          # Tests unitaires du serveur Memory (33 tests)
 ├── test_database.pb        # Tests unitaires du serveur Database (37 tests)
 ├── test_context7.pb        # Tests unitaires du serveur Context7 (19 tests)

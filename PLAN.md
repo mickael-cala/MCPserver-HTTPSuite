@@ -17,8 +17,8 @@
 
 | Critère | État |
 |---|---|
-| Tests unitaires des modules et serveurs | ✅ 41 + 33 + 37 + 19 + 24 + 40 = **194** (Windows et Linux) |
-| Tests d'intégration (8 serveurs + transport) | ✅ **120/120** |
+| Tests unitaires des modules et serveurs | ✅ 46 + 33 + 37 + 19 + 24 + 40 = **199** (Windows et Linux) |
+| Tests d'intégration (8 serveurs + transport) | ✅ **121/121** |
 | `run_all.bat` / `run_all.sh` vert | ✅ **10/10 étapes** |
 | Robustesse / performances | ✅ **21/21** (T6.14 conditionnel à une clé Context7) |
 | Transport | ✅ HTTP JSON (`POST /mcp`) + SSE optionnel (`GET /mcp` avec `Accept`) |
@@ -26,8 +26,8 @@
 | Aucun secret loggé ni renvoyé | ✅ tokens/clés jamais inclus dans les réponses ; logs stderr |
 | Documentation README complète | ✅ (outils, transport, env, build, tests, config client) |
 | Release publiée | ⏳ v2.0.0 à publier |
-| Validation Windows | ✅ 2.0.0 (10/10, 194 unitaires, 21 robustesse/perf, 120 intégration) |
-| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 194, 21, 120) |
+| Validation Windows | ✅ 2.0.0 (10/10, 199 unitaires, 21 robustesse/perf, 121 intégration) |
+| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 199, 21, 121) |
 | Validation macOS | ⏳ à faire (prérequis : `curl`) |
 | Sécurité réseau | ✅ bind loopback, Origin, jeton optionnel, corps borné |
 
@@ -44,8 +44,8 @@
 | `gitMCP` | 8107 | 7 | 24 | 12 | README, SECURITY, ERRATA |
 | `githubMCP` | 8108 | 10 | 40 | 25 | README, SECURITY, ERRATA |
 
-Total : **45 outils**, **194 tests unitaires**, **120 tests d'intégration**
-(dont 20 tests de transport HTTP), **21 vérifications de robustesse/perf**.
+Total : **45 outils**, **199 tests unitaires**, **121 tests d'intégration**
+(dont 21 tests de transport HTTP), **21 vérifications de robustesse/perf**.
 
 ## Détail des phases
 
@@ -114,6 +114,9 @@ Total : **45 outils**, **194 tests unitaires**, **120 tests d'intégration**
 - **`mcp_common/jsonrpc.pbi`** : `ProcessRequestToJSON()` indépendant du
   transport ; notifications sans réponse ; `-32700` / `-32600` / `-32601` /
   `-32603` ; `initialize` négocie `2025-06-18` / `2025-03-26`.
+- **Conformité stricte** : JSON invalide (`-32700`), lot JSON-RPC et réponse
+  client (`-32600`) → HTTP `400` ; `MCP-Protocol-Version` absent → traité
+  comme `2025-03-26` ; méthode inconnue (`-32601`) reste HTTP `200`.
 - **`mcp_common/http_server.pbi`** : serveur HTTP/1.1 natif
   (`CreateNetworkServer`, `NetworkServerEvent`), `POST /mcp`, `GET /health`,
   **SSE optionnel** (`GET /mcp` avec `Accept: text/event-stream`, `POST` en
@@ -124,8 +127,8 @@ Total : **45 outils**, **194 tests unitaires**, **120 tests d'intégration**
 - **8 serveurs** : ports 8101–8108, `MCPHttpMainLoop()`, version 2.0.0.
 - **Scripts** : `start_all` / `stop_all` (Windows/Linux), correction du bug de
   syntaxe de `run_all.sh`.
-- **Tests** : `tests/mcp_client.py` réécrit en HTTP ; 20 tests de transport
-  ajoutés (120 au total) ; robustesse adaptée (21 vérifications) ;
-  `test_common.pb` couvre le noyau JSON-RPC (41 tests).
+- **Tests** : `tests/mcp_client.py` réécrit en HTTP ; 21 tests de transport
+  ajoutés (121 au total) ; robustesse adaptée (21 vérifications) ;
+  `test_common.pb` couvre le noyau JSON-RPC (46 tests).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, CHANGELOG, ERRATA,
   CONTRIBUTING, SECURITY et modèles GitHub alignés sur HTTP.

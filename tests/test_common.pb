@@ -144,9 +144,9 @@ EndProcedure
 ; Noyau JSON-RPC
 ; ---------------------------------------------------------------------------
 Procedure TestJsonRpc()
-  Protected R.s, J.i, Root.i, Res.i, Arr.i
+  Protected R.s, J.i, Root.i, Res.i, Arr.i, Status.i
 
-  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}")
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}", @Status)
   J = ParseJSON(#PB_Any, R)
   UTAssert(1, Bool(J <> 0), "JSON-RPC initialize : reponse JSON")
   Root = JSONValue(J)
@@ -155,7 +155,7 @@ Procedure TestJsonRpc()
   UTAssert(1, Bool(GetJSONMember(Res, "serverInfo") <> 0), "JSON-RPC initialize : serverInfo")
   FreeJSON(J)
 
-  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}", @Status)
   J = ParseJSON(#PB_Any, R)
   Root = JSONValue(J)
   Res = GetJSONMember(Root, "result")
@@ -164,28 +164,42 @@ Procedure TestJsonRpc()
   UTAssertStr("echo", GetJSONString(GetJSONMember(GetJSONElement(Arr, 0), "name")), "JSON-RPC tools/list : nom echo")
   FreeJSON(J)
 
-  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"ping\"}")
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"ping\"}", @Status)
   J = ParseJSON(#PB_Any, R)
   UTAssertStr("abc", GetJSONString(GetJSONMember(JSONValue(J), "id")), "JSON-RPC : id string preserve")
   FreeJSON(J)
 
-  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"bonjour\"}}}")
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"bonjour\"}}}", @Status)
   UTAssertStr("bonjour", RespToolText(R), "JSON-RPC tools/call : texte")
   J = ParseJSON(#PB_Any, R)
   Res = GetJSONMember(JSONValue(J), "result")
   UTAssert(0, GetJSONBoolean(GetJSONMember(Res, "isError")), "JSON-RPC tools/call : isError false")
   FreeJSON(J)
 
-  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"fail\",\"arguments\":{}}}")
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"fail\",\"arguments\":{}}}", @Status)
   J = ParseJSON(#PB_Any, R)
   Res = GetJSONMember(JSONValue(J), "result")
   UTAssert(1, GetJSONBoolean(GetJSONMember(Res, "isError")), "JSON-RPC tools/call : isError true")
   FreeJSON(J)
 
-  UTAssertStr("", ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"), "JSON-RPC notification : pas de reponse")
-  UTAssert(-32601, RespErrorCode(ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"inconnue\"}")), "JSON-RPC methode inconnue : -32601")
-  UTAssert(-32700, RespErrorCode(ProcessRequestToJSON("{")), "JSON-RPC JSON invalide : -32700")
-  UTAssert(-32600, RespErrorCode(ProcessRequestToJSON("[]")), "JSON-RPC lot : -32600")
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}", @Status)
+  UTAssertStr("", R, "JSON-RPC notification : pas de reponse")
+  UTAssert(202, Status, "JSON-RPC notification : HTTP 202")
+
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"inconnue\"}", @Status)
+  UTAssert(-32601, RespErrorCode(R), "JSON-RPC methode inconnue : -32601")
+
+  R = ProcessRequestToJSON("{", @Status)
+  UTAssert(-32700, RespErrorCode(R), "JSON-RPC JSON invalide : -32700")
+  UTAssert(400, Status, "JSON-RPC JSON invalide : HTTP 400")
+
+  R = ProcessRequestToJSON("[]", @Status)
+  UTAssert(-32600, RespErrorCode(R), "JSON-RPC lot : -32600")
+  UTAssert(400, Status, "JSON-RPC lot : HTTP 400")
+
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{}}", @Status)
+  UTAssert(-32600, RespErrorCode(R), "JSON-RPC reponse client refusee : -32600")
+  UTAssert(400, Status, "JSON-RPC reponse client : HTTP 400")
 EndProcedure
 
 ; ---------------------------------------------------------------------------

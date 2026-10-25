@@ -3,7 +3,8 @@
 ;  Depend de json_helpers.pbi et protocol.pbi.
 ; ============================================================================
 ;  Chaque serveur configure les globals ci-dessous, puis http_server.pbi
-;  appelle ProcessRequestToJSON() pour chaque corps HTTP :
+;  appelle ProcessRequestToJSON(Line, @Status) pour chaque corps HTTP.
+;  Status recoit 200 (requete), 202 (notification) ou 400 (entree invalide).
 ;
 ;    G_ServerName    = "MonServeurMCP-PureBasic"
 ;    G_ServerVersion = "2.0.0"
@@ -105,28 +106,49 @@ EndProcedure
 ; ---------------------------------------------------------------------------
 ; Traitement d'une requete JSON-RPC.
 ; Retourne la reponse JSON complete, ou "" pour une notification.
+; *HttpStatus recoit 200 (requete valide), 202 (notification) ou 400
+; (entree invalide : JSON invalide, lot, reponse client, methode absente).
 ; ---------------------------------------------------------------------------
-Procedure.s ProcessRequestToJSON(Line.s)
+Procedure.s ProcessRequestToJSON(Line.s, *HttpStatus.Integer)
+  *HttpStatus\i = 200
   Protected ReqJSON.i = ParseJSON(#PB_Any, Line)
   If Not ReqJSON
+    *HttpStatus\i = 400
     ProcedureReturn BuildErrorResponse(0, -32700, "Parse error: invalid JSON")
   EndIf
 
   Protected RootVal.i = JSONValue(ReqJSON)
   If JSONType(RootVal) <> #PB_JSON_Object
+    *HttpStatus\i = 400
     FreeJSON(ReqJSON)
     ProcedureReturn BuildErrorResponse(0, -32600, "Invalid Request: Root must be an object")
   EndIf
 
   Protected MethodMember.i = GetJSONMember(RootVal, "method")
-  Protected Method.s = ""
-  If MethodMember And JSONType(MethodMember) = #PB_JSON_String
-    Method = GetJSONString(MethodMember)
+  If Not MethodMember
+    ; Objet sans methode : reponse JSON-RPC envoyee par le client, ou invalide.
+    *HttpStatus\i = 400
+    Protected NoMethodMsg.s = "Invalid Request: method must be a string"
+    If GetJSONMember(RootVal, "result") Or GetJSONMember(RootVal, "error")
+      NoMethodMsg = "Invalid Request: client responses are not supported"
+    EndIf
+    Protected NoMethod.s = BuildErrorResponse(0, -32600, NoMethodMsg)
+    FreeJSON(ReqJSON)
+    ProcedureReturn NoMethod
   EndIf
 
+  If JSONType(MethodMember) <> #PB_JSON_String
+    *HttpStatus\i = 400
+    Protected BadMethodType.s = BuildErrorResponse(GetJSONMember(RootVal, "id"), -32600, "Invalid Request: method must be a string")
+    FreeJSON(ReqJSON)
+    ProcedureReturn BadMethodType
+  EndIf
+
+  Protected Method.s = GetJSONString(MethodMember)
   Protected IdMember.i = GetJSONMember(RootVal, "id")
 
   If Method = ""
+    *HttpStatus\i = 400
     Protected BadMethod.s = BuildErrorResponse(IdMember, -32600, "Invalid Request: method must be a string")
     FreeJSON(ReqJSON)
     ProcedureReturn BadMethod
@@ -134,6 +156,7 @@ Procedure.s ProcessRequestToJSON(Line.s)
 
   ; Notifications : pas de reponse attendue (JSON-RPC 2.0 / MCP).
   If Left(Method, 14) = "notifications/" Or IdMember = 0
+    *HttpStatus\i = 202
     FreeJSON(ReqJSON)
     ProcedureReturn ""
   EndIf

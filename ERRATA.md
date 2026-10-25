@@ -65,16 +65,16 @@
   texte reste en français non structuré ; les clients doivent tester le
   drapeau, pas le texte.
 - **Validation** : la version 2.0.0 (HTTP) est compilée et testée sous
-  **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, 194 unitaires,
-  21 robustesse/perf, 120 intégration). La validation **macOS** reste à faire.
+  **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, 199 unitaires,
+  21 robustesse/perf, 121 intégration). La validation **macOS** reste à faire.
 - Aucune CI automatisée (PureBasic sous licence).
 
 ## Résultats des tests
 
 Dernières exécutions de `run_all` (Windows et Linux/WSL2) : **10/10 étapes** — tests
-unitaires 41 + 33 + 37 + 19 + 24 + 40 = **194** réussis (mcp_common, Memory,
+unitaires 46 + 33 + 37 + 19 + 24 + 40 = **199** réussis (mcp_common, Memory,
 Database, Context7, Git, GitHub), robustesse/performance **21/21**,
-tests d'intégration **120/120** (8 serveurs + transport ; PostgreSQL et
+tests d'intégration **121/121** (8 serveurs + transport ; PostgreSQL et
 Context7 live sont ignorés sans configuration/réseau, GitHub utilise un mock
 local).
 

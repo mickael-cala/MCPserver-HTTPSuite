@@ -660,8 +660,8 @@ def run_tests_transport():
             status, body, _ = client.post_raw(
                 b"{pas du json", headers={"Content-Type": "application/json"})
             resp = json.loads(body.decode("utf-8")) if body else {}
-            check("JSON invalide -> -32700",
-                  status == 200 and (resp.get("error") or {}).get("code") == -32700,
+            check("JSON invalide -> 400 + -32700",
+                  status == 400 and (resp.get("error") or {}).get("code") == -32700,
                   f"status={status}, {resp}")
 
             status, body, _ = client.post_raw(
@@ -681,8 +681,17 @@ def run_tests_transport():
                 b'[{"jsonrpc":"2.0","id":1,"method":"ping"}]',
                 headers={"Content-Type": "application/json"})
             resp = json.loads(body.decode("utf-8"))
-            check("lot JSON-RPC -> -32600",
-                  (resp.get("error") or {}).get("code") == -32600, str(resp))
+            check("lot JSON-RPC -> 400 + -32600",
+                  status == 400 and (resp.get("error") or {}).get("code") == -32600,
+                  f"status={status}, {resp}")
+
+            status, body, _ = client.post_raw(
+                b'{"jsonrpc":"2.0","id":1,"result":{}}',
+                headers={"Content-Type": "application/json"})
+            resp = json.loads(body.decode("utf-8"))
+            check("reponse JSON-RPC client -> 400 + -32600",
+                  status == 400 and (resp.get("error") or {}).get("code") == -32600,
+                  f"status={status}, {resp}")
 
             huge = (b'{"jsonrpc":"2.0","id":1,"method":"ping","pad":"'
                     + b"x" * (1024 * 1024) + b'"}')

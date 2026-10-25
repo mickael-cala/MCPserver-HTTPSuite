@@ -25,6 +25,7 @@ Global G_HttpLastStatus.i = 0
 Global G_HttpNextTimeoutCheck.i = 0
 Global G_HttpSseStarted.i = #False
 Global G_HttpNextSseCheck.i = 0
+Global G_HttpRequestProtocol.s = "2025-03-26"
 Global NewMap G_HttpHeaders.s()
 Global NewMap G_SseClients.s()
 
@@ -379,10 +380,14 @@ Procedure HttpHandleMcp(Client.i, Body.s)
     HttpSendError(Client, 400, "Corps JSON-RPC vide.")
     ProcedureReturn
   EndIf
-  Protected Resp.s = ProcessRequestToJSON(Body)
+  Protected Status.i = 200
+  Protected Resp.s = ProcessRequestToJSON(Body, @Status)
   If Resp = ""
     ; Notification JSON-RPC : 202 sans corps.
     HttpSendResponse(Client, 202, "", "")
+  ElseIf Status = 400
+    ; Entree invalide (JSON, lot, reponse client, methode absente).
+    HttpSendResponse(Client, 400, "application/json; charset=utf-8", Resp)
   ElseIf HttpAcceptSse()
     ; Le client accepte SSE : reponse en un evenement text/event-stream.
     HttpSendSseResponse(Client, Resp)
@@ -406,8 +411,6 @@ Procedure HttpRoute(Client.i, Method.s, Path.s, Body.s)
           HttpSendError(Client, 403, "Origine non autorisee : " + Origin)
         ElseIf Not HttpTokenAllowed(G_HttpHeaders("authorization"))
           HttpSendError(Client, 401, "Jeton Bearer requis ou invalide.", "WWW-Authenticate: Bearer" + #CRLF$)
-        ElseIf FindMapElement(G_HttpHeaders(), "mcp-protocol-version") And Not IsSupportedProtocolVersion(Trim(G_HttpHeaders("mcp-protocol-version")))
-          HttpSendError(Client, 400, "MCP-Protocol-Version non supportee : " + Trim(G_HttpHeaders("mcp-protocol-version")))
         ElseIf HttpAcceptSse()
           HttpStartSse(Client)
         Else
@@ -438,13 +441,6 @@ Procedure HttpRoute(Client.i, Method.s, Path.s, Body.s)
       If CT <> "application/json" And Left(CT, 17) <> "application/json;"
         HttpSendError(Client, 415, "Content-Type application/json requis.")
         ProcedureReturn
-      EndIf
-      If FindMapElement(G_HttpHeaders(), "mcp-protocol-version")
-        Protected PV.s = Trim(G_HttpHeaders("mcp-protocol-version"))
-        If Not IsSupportedProtocolVersion(PV)
-          HttpSendError(Client, 400, "MCP-Protocol-Version non supportee : " + PV)
-          ProcedureReturn
-        EndIf
       EndIf
       HttpHandleMcp(Client, Body)
 
@@ -513,6 +509,17 @@ Procedure.i HttpParseHeaders(Client.i, *C.HttpConnState)
       EndIf
     EndIf
   Next
+
+  ; Version MCP : si l'en-tete est absent, la spec suggere 2025-03-26.
+  G_HttpRequestProtocol = G_McpFallbackProtocolVersion
+  If *C\Path = "/mcp" And FindMapElement(G_HttpHeaders(), "mcp-protocol-version")
+    Protected ReqPV.s = Trim(G_HttpHeaders("mcp-protocol-version"))
+    If Not IsSupportedProtocolVersion(ReqPV)
+      HttpSendError(Client, 400, "MCP-Protocol-Version non supportee : " + ReqPV)
+      ProcedureReturn #False
+    EndIf
+    G_HttpRequestProtocol = ReqPV
+  EndIf
 
   If FindMapElement(G_HttpHeaders(), "transfer-encoding")
     HttpSendError(Client, 501, "Transfer-Encoding non supporte (utilisez Content-Length).")
@@ -628,7 +635,7 @@ Procedure HttpConnOnData(Client.i)
   Protected StartMs.i = ElapsedMilliseconds()
   HttpRoute(Client, *C\Method, *C\Path, Body)
   If G_HttpLogRequests
-    LogDebug("HTTP " + *C\Method + " " + *C\Path + " -> " + Str(G_HttpLastStatus) + " (" + Str(ElapsedMilliseconds() - StartMs) + " ms)")
+    LogDebug("HTTP " + *C\Method + " " + *C\Path + " -> " + Str(G_HttpLastStatus) + " (MCP " + G_HttpRequestProtocol + ", " + Str(ElapsedMilliseconds() - StartMs) + " ms)")
   EndIf
 
   If G_HttpSseStarted

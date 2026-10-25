@@ -92,8 +92,8 @@ def test_http_robustness():
                 resp = json.loads(body.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 resp = {}
-            check("T6.3 JSON malforme -> -32700",
-                  status == 200 and (resp.get("error") or {}).get("code") == -32700,
+            check("T6.3 JSON malforme -> 400 + -32700",
+                  status == 400 and (resp.get("error") or {}).get("code") == -32700,
                   f"status={status}, body={body[:120]!r}")
             check("T6.3 serveur vivant apres erreur", len(client.list_tools()) == 10)
 

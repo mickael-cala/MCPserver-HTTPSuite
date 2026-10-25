@@ -15,7 +15,7 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
 - le système d'exploitation et la version de PureBasic ;
 - le serveur concerné, l'URL/le port, la requête JSON-RPC envoyée et la
   réponse HTTP/JSON obtenue ;
-- le résultat de `python tests/test_mcp.py` (120 tests) et/ou
+- le résultat de `python tests/test_mcp.py` (121 tests) et/ou
   `run_all.bat` / `./run_all.sh`.
 
 ## Soumettre une modification

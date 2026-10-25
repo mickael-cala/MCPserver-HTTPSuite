@@ -10,6 +10,11 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
   par défaut. **SSE optionnel** : `GET /mcp` + `Accept: text/event-stream`
   ouvre un flux ; `POST /mcp` répond en SSE si le client l'accepte. Aucune
   session `Mcp-Session-Id`. `DELETE /mcp` renvoie `204`.
+- **Conformité transport stricte** : JSON invalide (`-32700`), lot JSON-RPC,
+  réponse JSON-RPC envoyée par le client (`-32600`) renvoient désormais
+  **HTTP 400** ; une requête valide avec méthode inconnue reste HTTP 200.
+  Sans en-tête `MCP-Protocol-Version`, la requête est traitée comme
+  `2025-03-26` (fallback de la spec).
 - **Nouveau `mcp_common/runtime.pbi`** : remplace `stdio.pbi` ; écriture
   stderr multi-OS et `CheckRuntime()`. Le code stdin/stdout est supprimé.
 - **Nouveau `mcp_common/http_server.pbi`** : serveur HTTP/1.1 natif
@@ -29,17 +34,17 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
 - **Scripts** : ajout de `start_all.bat/.sh` et `stop_all.bat/.sh` ; correction
   du bug de syntaxe de `run_all.sh` (lignes HTML orphelines).
 - **Tests** : `tests/mcp_client.py` réécrit en client HTTP (`GET /health`,
-  `POST /mcp`, SSE optionnel) ; 20 tests de transport ajoutés
-  (**120 tests d'intégration**) ; robustesse adaptée au HTTP
+  `POST /mcp`, SSE optionnel) ; 21 tests de transport ajoutés
+  (**121 tests d'intégration**) ; robustesse adaptée au HTTP
   (**21 vérifications**) ; `test_common.pb` couvre le noyau JSON-RPC
-  (**194 tests unitaires** au total).
+  (**199 tests unitaires** au total).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, ERRATA, CONTRIBUTING,
   SECURITY, CODE_OF_CONDUCT et modèles GitHub alignés sur
   **MCPserver-HTTPSuite** et le transport HTTP. Ajout de
   `examples/qwen-settings.json` (clé `httpUrl`, Streamable HTTP).
 - **Validation** : compilation et suite complète vertes sous **Windows** et
-  **Linux (WSL2 Ubuntu 26.04)** (10/10, 194 unitaires, 21 robustesse/perf,
-  120 intégration). Validation macOS de la version 2.0.0 à faire.
+  **Linux (WSL2 Ubuntu 26.04)** (10/10, 199 unitaires, 21 robustesse/perf,
+  121 intégration). Validation macOS de la version 2.0.0 à faire.
 
 ### Corrigé (validation Linux/WSL2, 1.0.x)
 - **`build.sh` / `run_all.sh`** utilisaient les options Windows (`/EXE`,

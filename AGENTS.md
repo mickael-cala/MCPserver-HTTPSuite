@@ -20,9 +20,9 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
    build.bat                  # ou ./build.sh : compile les 8 serveurs
    run_all.bat                # ou ./run_all.sh : unitaires + intégration + rapport
    ```
-   Attendu : **10/10 étapes**, **194 tests unitaires**
-   (41+33+37+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
-   et **120/120 tests d'intégration**. Si ce n'est pas le cas, corriger avant
+   Attendu : **10/10 étapes**, **199 tests unitaires**
+   (46+33+37+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
+   et **121/121 tests d'intégration**. Si ce n'est pas le cas, corriger avant
    toute nouvelle fonctionnalité.
 4. **Choisir la suite** : voir [ROADMAP.md](ROADMAP.md). Ne jamais démarrer
    une phase sans avoir vert `run_all`.
@@ -37,8 +37,8 @@ export PBCOMPILER=$HOME/purebasic-demo/purebasic_demo/compilers/pbcompiler
 export PUREBASIC_HOME=$HOME/purebasic-demo/purebasic_demo
 ./build.sh && ./run_all.sh
 ```
-Attendu : 10/10 étapes (194 unitaires, 21 robustesse/perf, 120 intégration).
-Validé sous WSL2 Ubuntu 26.04 le 2026-10-24 : 10/10, 194, 21, 120.
+Attendu : 10/10 étapes (199 unitaires, 21 robustesse/perf, 121 intégration).
+Validé sous WSL2 Ubuntu 26.04 le 2026-10-24 : 10/10, 199, 21, 121.
 Attention : `build/` est partagé avec Windows si le dépôt est sur `/mnt/c` —
 relancer `build.bat` après une validation Linux.
 
@@ -127,8 +127,11 @@ Le cœur métier d'un serveur va dans `src/<serveur>_core.pbi` (testable), le
   est refusé (`501`).
 - **Corps maximal** 1 Mio par défaut (`MCP_HTTP_MAX_BODY`), réponse `413`.
 - **Notifications** JSON-RPC : `202 Accepted`, corps vide.
-- **Erreurs JSON-RPC** (`-32700`, `-32600`, `-32601`, `-32603`) : HTTP `200`
-  avec un objet `error` ; les erreurs de transport utilisent les codes 4xx/5xx.
+- **Entrée invalide** : JSON invalide (`-32700`), lot JSON-RPC, réponse
+  JSON-RPC envoyée par le client ou méthode absente (`-32600`) → HTTP `400`.
+  Les erreurs d'une requête valide (`-32601`, `-32603`) restent HTTP `200`.
+- **Version MCP** : `MCP-Protocol-Version` est validé ; s'il est absent, la
+  requête est traitée comme `2025-03-26` (fallback de la spec).
 - **Sécurité réseau** : bind loopback par défaut, validation `Origin`, jeton
   Bearer optionnel (`MCP_HTTP_TOKEN`). Les routes `GET` SSE et `POST /mcp`
   doivent passer par ces contrôles.
@@ -149,7 +152,7 @@ stop_all.bat           # Windows : arrête les 8 serveurs
 ./stop_all.sh          # Linux/macOS : idem
 run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + intégration + report.html
 ./run_all.sh           # idem sous Linux/macOS
-python tests/test_mcp.py [serveur]   # intégration seule (120 tests)
+python tests/test_mcp.py [serveur]   # intégration seule (121 tests)
 ./clean.sh             # nettoie build/
 ```
 
@@ -296,9 +299,9 @@ stop_all.bat/.sh                  arret des serveurs
 run_all.bat/run_all.sh            compilation + tests unitaires + integration + rapport
 tests/mcp_client.py               harnais de test externe (client MCP HTTP)
 tests/mock_github.py              mock local de l'API GitHub
-tests/test_mcp.py                 tests d'integration + transport (120 tests)
+tests/test_mcp.py                 tests d'integration + transport (121 tests)
 tests/unit_test.pbi               framework de tests unitaires PureBasic
-tests/test_common.pb              tests unitaires mcp_common (41 tests)
+tests/test_common.pb              tests unitaires mcp_common (46 tests)
 tests/test_memory.pb              tests unitaires Memory (33 tests)
 tests/test_database.pb            tests unitaires Database (37 tests)
 tests/test_context7.pb            tests unitaires Context7 (19 tests)
