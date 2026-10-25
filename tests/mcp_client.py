@@ -37,7 +37,7 @@ def find_free_port(host="127.0.0.1"):
 
 
 class MCPTestClient:
-    """Client JSON-RPC 2.0 HTTP pour tester un serveur MCP sans SSE."""
+    """Client JSON-RPC 2.0 HTTP pour tester un serveur MCP (SSE optionnel)."""
 
     def __init__(self, executable, env=None, timeout=20, auto_initialize=True,
                  token=None, port=None, host="127.0.0.1"):

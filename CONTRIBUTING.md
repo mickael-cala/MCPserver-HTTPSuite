@@ -76,7 +76,11 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
   conditionnels).
 - Robustesse/performance : `tests/test_robustness.py` (charge HTTP, corps
   1 Mio, JSON malformé, port occupé, SSE non imposé, perf).
+- Compteurs de référence : **199 unitaires**, **21 robustesse/perf**,
+  **124 intégration**, `run_all` **10/10**.
 - `run_all` doit être **vert (10/10)** avant toute pull request.
+- PureBasic Free : garder chaque fichier source sous ~800 lignes (le serveur
+  HTTP est scindé en `http_server.pbi` + `http_sse.pbi`).
 
 ## Sécurité
 

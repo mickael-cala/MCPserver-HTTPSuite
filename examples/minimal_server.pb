@@ -4,6 +4,8 @@
 ;  correctement a initialize et tools/list (catalogue factice) en moins de
 ;  200 lignes de code metier, grace aux modules mcp_common/.
 ; ============================================================================
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON par defaut, SSE optionnel)
+;  Config      : MCP_HTTP_PORT (defaut 8090), MCP_HTTP_HOST, MCP_HTTP_TOKEN
 ;  Compilation : pbcompiler examples/minimal_server.pb /EXE build/minimal_server /CONSOLE
 ; ============================================================================
 

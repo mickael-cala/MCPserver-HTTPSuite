@@ -3,7 +3,7 @@
 ;  Graphe d'entites persistant en SQLite (bibliotheque integree, 0 dependance)
 ; ============================================================================
 ;  Compilation : build.bat / build.sh
-;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON par defaut, SSE optionnel)
 ;  Config      : MCP_MEMORY_DB = chemin du fichier SQLite (defaut: memory.db)
 ; ============================================================================
 

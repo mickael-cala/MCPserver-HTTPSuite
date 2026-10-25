@@ -25,9 +25,11 @@ labels: bug
 
 - OS : <!-- Windows 11, Ubuntu 24.04, macOS … -->
 - Version de PureBasic :
+- Client MCP et transport : <!-- Qwen httpUrl, Claude type http, etc. -->
 - Résultat de `python tests/test_mcp.py` : <!-- 124/124 ou détails des échecs -->
 
 ## Contexte supplémentaire
 
 <!-- Binaire compilé avec build.bat/build.sh ? MCP_ROOT/MCP_ROOT_SECRET définis ?
-     MCP_HTTP_TOKEN / MCP_HTTP_HOST / MCP_HTTP_PORT personnalisés ? -->
+     MCP_HTTP_TOKEN / MCP_HTTP_HOST / MCP_HTTP_PORT personnalisés ?
+     Chemin concerné par un symlink/junction, ou hostname fetch résolu ? -->

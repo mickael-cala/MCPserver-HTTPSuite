@@ -1,6 +1,6 @@
 # Feuille de route
 
-Les 8 serveurs MCP (phases 0 à 7, voir [PLAN.md](PLAN.md)) sont livrés en
+Les 8 serveurs MCP (phases 0 à 8, voir [PLAN.md](PLAN.md)) sont livrés en
 **version 2.0.0** avec un transport **HTTP JSON-RPC** et **SSE optionnel**.
 
 ## Court terme
@@ -25,8 +25,8 @@ Les 8 serveurs MCP (phases 0 à 7, voir [PLAN.md](PLAN.md)) sont livrés en
   `UseNetworkTLS()` ; en attendant, recommander un reverse proxy HTTPS.
 - **Concurrence** : traiter plusieurs requêtes en parallèle (threads ou
   multiplexage) sans bloquer `/health` pendant un appel long.
-- **Limites de débit** par client (protections anti-abus) et journalisation
-  structurée optionnelle.
+- **Observabilité** : journalisation structurée optionnelle, métriques et
+  health-check enrichi.
 - **Fetch/SequentialThinking** : extraction HTML→Markdown plus riche (tableaux,
   code), persistance optionnelle de l'historique de raisonnement.
 - **FileMCP** : `copy_file`, suppression récursive optionnelle, pagination de

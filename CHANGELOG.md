@@ -16,8 +16,10 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
   Sans en-tête `MCP-Protocol-Version`, la requête est traitée comme
   `2025-03-26` (fallback de la spec).
 - **Durcissement sécurité (Phase 8)** : `fileMCP` refuse les symlinks et
-  junctions sous `MCP_ROOT` ; `MCP-Fetch-PB` résout le DNS et refuse les IP
-  privées/loopback/ULA/link-local, avec un plafond de réponse de 2 Mo ;
+  junctions sous `MCP_ROOT` (y compris les liens cassés) ; `MCP-Fetch-PB`
+  résout le DNS (`getent` / `nslookup` / `dscacheutil`, timeout 5 s) et refuse
+  les IP privées/loopback/ULA/link-local, les formes octales et IPv4-mapped
+  (fail closed), avec un plafond de réponse de 2 Mo via `HttpGetLimited` ;
   `search_files` est borné (profondeur 32, 10 000 entrées, timeout 10 s).
 - **Nouveau `mcp_common/runtime.pbi`** : remplace `stdio.pbi` ; écriture
   stderr multi-OS et `CheckRuntime()`. Le code stdin/stdout est supprimé.

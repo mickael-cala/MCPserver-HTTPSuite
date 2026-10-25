@@ -54,7 +54,7 @@ Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
 - Modules partagés : `mcp_common/{runtime,logging,json_helpers,protocol,jsonrpc,http,http_server,http_sse}.pbi`.
 - Harnais Python `tests/mcp_client.py` (HTTP, `GET /health`, validation JSON-RPC 2.0, timeout).
 - Framework de tests PureBasic `tests/unit_test.pbi` (asserts, rapport, code de sortie).
-- `run_all` : compilation → tests unitaires → intégration → `tests/report.html`.
+- `run_all` : compilation → tests unitaires → robustesse/perf → intégration → `tests/report.html`.
 - Preuve : `examples/minimal_server.pb` (initialize + tools/list via HTTP, port 8090).
 
 ### Phase 1 — Memory (terminée)
@@ -109,7 +109,7 @@ Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
   serveur ; `examples/mcp.json` (8 serveurs) ; `MCP_CONTEXT7_API_BASE`
   ajouté pour les tests de coupure réseau.
 
-### Phase 7 — Transport HTTP (terminée)
+### Phase 7 — Transport HTTP + SSE optionnel (terminée)
 - **`mcp_common/runtime.pbi`** : remplace `stdio.pbi` ; stderr uniquement,
   `CheckRuntime()`. Le mode stdin/stdout est supprimé.
 - **`mcp_common/jsonrpc.pbi`** : `ProcessRequestToJSON()` indépendant du
@@ -132,7 +132,7 @@ Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
   ajoutés (124 au total) ; robustesse adaptée (21 vérifications) ;
   `test_common.pb` couvre le noyau JSON-RPC (46 tests).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, CHANGELOG, ERRATA,
-  CONTRIBUTING, SECURITY et modèles GitHub alignés sur HTTP.
+  CONTRIBUTING, SECURITY et modèles GitHub alignés sur HTTP + SSE optionnel.
 
 ### Phase 8 — Durcissement sécurité (terminée)
 - **fileMCP** : `IsLinkOrJunction` + `PathHasLinkInRoot` refusent les
@@ -141,7 +141,8 @@ Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
 - **Recherche** : profondeur max 32, 10 000 entrées, timeout 10 s, liens
   ignorés pour éviter les sorties de racine et les cycles.
 - **Fetch** : résolution DNS (`getent` Linux, `nslookup` Windows,
-  `dscacheutil` macOS) et rejet des IP privées/loopback/ULA/link-local ;
-  plafond de réponse à 2 Mo (`HttpGetLimited`, `curl --max-filesize` ou
-  WinHTTP). Échec fermé si la résolution DNS échoue.
+  `dscacheutil` macOS, timeout 5 s) et rejet des IP privées/loopback/ULA/
+  link-local, y compris les formes octales et IPv4-mapped ; plafond de réponse
+  à 2 Mo (`HttpGetLimited`, `curl --max-filesize` ou WinHTTP). Refus
+  (fail closed) si la résolution DNS échoue.
 - **Tests** : 19 tests fileMCP, 4 tests Fetch, **124 tests d'intégration**.

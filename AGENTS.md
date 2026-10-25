@@ -5,7 +5,7 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
 
 ## Reprise du développement (bootstrap)
 
-1. **Lire l'état du plan** : [PLAN.md](PLAN.md) (phases 0→7, statut et
+1. **Lire l'état du plan** : [PLAN.md](PLAN.md) (phases 0→8, statut et
    livrables) et [ROADMAP.md](ROADMAP.md) (suite).
 2. **Vérifier l'environnement** :
    - PureBasic 6.x (testé avec 6.41) — `pbcompiler` cherché via `PBCOMPILER`,
@@ -51,7 +51,7 @@ soient à jour. Avant `git commit`, passer cette checklist :
 |---|---|
 | `README.md` | nouvel outil, nouvelle variable d'environnement, changement de build/tests, nouveau serveur, ports HTTP, compteurs de tests |
 | `PLAN.md` | début/fin de phase, changement de statut, nouvel écart au plan |
-| `CHANGELOG.md` | **tout changement notable** (ajout/correction/sécurité) sous `## [Non publié]` avec le détail des fichiers |
+| `CHANGELOG.md` | **tout changement notable** (ajout/correction/sécurité) sous la section de version en cours (`## [2.0.0]` ou `## [Non publié]`) avec le détail des fichiers |
 | `ROADMAP.md` | ce qui est terminé et ce qui devient prioritaire |
 | `ERRATA.md` | limitation, bug connu, résultat des tests de référence |
 | `AGENTS.md` | changement d'architecture, de commandes, de conventions, de pièges |
@@ -65,6 +65,18 @@ avec :
 
 ```bash
 grep -rnE "[0-9]+ tests|[0-9]+ serveurs|/9 étapes|/10 étapes" README.md PLAN.md ERRATA.md AGENTS.md CONTRIBUTING.md
+```
+
+Audit « parano » complémentaire avant commit :
+
+```bash
+# Anciens compteurs / anciennes formulations interdites
+grep -rnE "121|194|118|20 tests de transport|sans SSE|aucun SSE|MCPserver-StdioSuite" \
+  --include="*.md" .
+# Anciens ports ou plages erronées
+grep -rn "8101-8103" --include="*.md" .
+# Vérifier que le CHANGELOG n'est pas le seul à parler d'une fonctionnalité
+grep -rn "symlink\|SSRF\|httpUrl\|2025-03-26" --include="*.md" .
 ```
 
 Les chiffres historiques du `CHANGELOG.md` sont la seule exception : ils
@@ -90,8 +102,8 @@ git push                       # uniquement si l'utilisateur le demande
 
 **8 serveurs MCP** écrits en **PureBasic** (sources dans `src/`) :
 
-- `fileMCP.pb` — gestion de fichiers confinée (`MCP_ROOT`/`MCP_ROOT_SECRET`)
-- `MCP-Fetch-PB.pb` — fetch web (HTML → Markdown, protection SSRF)
+- `fileMCP.pb` — gestion de fichiers confinée (`MCP_ROOT`/`MCP_ROOT_SECRET`, symlinks/junctions refusés)
+- `MCP-Fetch-PB.pb` — fetch web (HTML → Markdown, anti-SSRF DNS, plafond 2 Mo)
 - `MCP-SequentialThinking-PB.pb` — raisonnement séquentiel
 - `memoryMCP.pb` + `memory_core.pbi` — mémoire SQLite (`MCP_MEMORY_DB`)
 - `dbMCP.pb` + `db_core.pbi` — exploration SQL (SQLite + PostgreSQL optionnel, lecture seule par défaut)
@@ -152,7 +164,7 @@ stop_all.bat           # Windows : arrête les 8 serveurs
 ./stop_all.sh          # Linux/macOS : idem
 run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + intégration + report.html
 ./run_all.sh           # idem sous Linux/macOS
-python tests/test_mcp.py [serveur]   # intégration seule (124 tests)
+python tests/test_mcp.py [serveur]   # intégration (124 au total ; sous-ensemble si serveur précisé)
 ./clean.sh             # nettoie build/
 ```
 
@@ -264,8 +276,8 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
   sous `MCP_ROOT` ; ne pas le retirer. `change_root` refuse une racine qui est
   un lien/junction.
 - **Anti-SSRF fetch** : `IsPrivateHost` / `IsPrivateIP` / `ResolveHost`
-  (getent/nslookup/dscacheutil) ; échec de résolution = refus. Le plafond
-  `#FETCH_MAX_BYTES` (2 Mo) passe par `HttpGetLimited` et
+  (getent/nslookup/dscacheutil, timeout 5 s) ; échec de résolution = refus.
+  Le plafond `#FETCH_MAX_BYTES` (2 Mo) passe par `HttpGetLimited` et
   `curl --max-filesize` / WinHTTP.
 - **Bornes de recherche** : `#MAX_SEARCH_DEPTH` (32),
   `#MAX_SEARCH_ENTRIES` (10 000), `#SEARCH_TIMEOUT_MS` (10 s) ; ignorer les

@@ -131,12 +131,12 @@ Procedure.s RespToolText(Json.s)
 EndProcedure
 
 ; ---------------------------------------------------------------------------
-; Protocole MCP : versions supportees (HTTP JSON, sans SSE)
+; Protocole MCP : versions supportees (HTTP JSON + SSE optionnel)
 ; ---------------------------------------------------------------------------
 Procedure TestProtocolVersions()
   UTAssert(1, IsSupportedProtocolVersion("2025-06-18"), "version 2025-06-18 supportee")
   UTAssert(1, IsSupportedProtocolVersion("2025-03-26"), "version 2025-03-26 supportee")
-  UTAssert(0, IsSupportedProtocolVersion("2024-11-05"), "version 2024-11-05 refusee (pas de SSE)")
+  UTAssert(0, IsSupportedProtocolVersion("2024-11-05"), "version 2024-11-05 refusee (HTTP+SSE legacy non supporte)")
   UTAssert(0, IsSupportedProtocolVersion(""), "version vide refusee")
 EndProcedure
 

@@ -3,7 +3,7 @@
 ;  Exploration de depots git locaux via git en sous-processus
 ; ============================================================================
 ;  Compilation : build.bat / build.sh
-;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON par defaut, SSE optionnel)
 ;  Config      : MCP_GIT_EXE = chemin de git (defaut: git dans le PATH)
 ; ============================================================================
 

@@ -3,7 +3,7 @@
 ;  Resolution de bibliotheques + documentation via context7.com
 ; ============================================================================
 ;  Compilation : build.bat / build.sh
-;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON par defaut, SSE optionnel)
 ;  Config      : MCP_CONTEXT7_API_KEY = cle API (prefixe ctx7sk) ;
 ;                query_docs l'exige, resolve_library_id fonctionne sans.
 ; ============================================================================

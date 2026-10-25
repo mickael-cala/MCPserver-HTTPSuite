@@ -4,8 +4,8 @@
 
 | Serveur | Limitations connues |
 |---|---|
-| `fileMCP` | `read_file` tronqué à 20 Ko, `read_file_lines` ≤ 5 Mo, dossiers non vides non supprimés |
-| `MCP-Fetch-PB` | conversion HTML→Markdown basique ; pas de JS ; hôtes privés refusés |
+| `fileMCP` | `read_file` tronqué à 20 Ko, `read_file_lines` ≤ 5 Mo, dossiers non vides non supprimés, symlinks/junctions sous la racine refusés |
+| `MCP-Fetch-PB` | conversion HTML→Markdown basique ; pas de JS ; hôtes privés/loopback/ULA/link-local refusés via DNS ; réponse ≤ 2 Mo |
 | `MCP-SequentialThinking-PB` | état en mémoire (perdu à l'arrêt) ; pas de persistance |
 | `memoryMCP` | une instance écrit à la fois (SQLite, pas de WAL) ; pas de FTS |
 | `dbMCP` | lecture seule par défaut ; PostgreSQL sans binding de paramètres |

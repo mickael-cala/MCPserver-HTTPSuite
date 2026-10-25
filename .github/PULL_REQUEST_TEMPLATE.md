@@ -13,9 +13,14 @@
       uniquement si `Accept: text/event-stream`, `GET /mcp` → 405 sans Accept
 - [ ] Nouvelle route éventuelle : `Origin`, jeton, `Content-Length` et taille
       de corps passés par `http_server.pbi`
+- [ ] Confinement : symlinks/junctions et SSRF DNS vérifiés si le code touche
+      `fileMCP` ou `MCP-Fetch-PB`
+- [ ] Budgets conservés : fetch ≤ 2 Mo, recherche ≤ profondeur 32 / 10 000
+      entrées / 10 s
 
 ## Sécurité
 
-<!-- Toute modification de ValiderChemin, change_root, de la couche HTTP
+<!-- Toute modification de ValiderChemin, change_root, des symlinks/junctions,
+     de l'anti-SSRF DNS, du plafond fetch, de la couche HTTP
      (Origin, MCP_HTTP_TOKEN, MCP_HTTP_MAX_BODY) ou de la gestion des secrets
      a-t-elle été revue avec attention ? -->

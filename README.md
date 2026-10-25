@@ -12,6 +12,36 @@ Cette version **2.0.0** est une réécriture du transport : les serveurs qui
 parlaient JSON-RPC sur stdin/stdout exposent désormais un endpoint HTTP
 `POST /mcp` (et un flux SSE optionnel). Le mode stdio n'est plus fourni.
 
+## Comment ça marche (en 1 minute)
+
+```text
+Client MCP
+   │  POST /mcp  (JSON-RPC 2.0)
+   ▼
+http_server.pbi  ──►  jsonrpc.pbi  ──►  dispatch de l'outil
+   │                                        │
+   │  Accept: application/json              ▼
+   │  ou text/event-stream            fileMCP / Fetch / Memory / ...
+   ▼                                        │
+Réponse JSON directe  ou  événement SSE ◄───┘
+```
+
+1. `start_all` lance **8 processus indépendants**, chacun sur un port
+   (8101–8108).
+2. Le client envoie `initialize`, `tools/list` ou `tools/call` en JSON-RPC
+   sur `POST /mcp`.
+3. `http_server.pbi` valide la requête HTTP, `Origin`, le jeton et la taille,
+   puis `jsonrpc.pbi` dispatche vers l'outil.
+4. La réponse part en **JSON** (`application/json`) ou en **SSE**
+   (`text/event-stream`) selon l'en-tête `Accept`.
+5. `fileMCP` confine les chemins à `MCP_ROOT` et refuse les liens ;
+   `MCP-Fetch-PB` vérifie le DNS et plafonne la réponse à 2 Mo.
+
+Ce projet n'est **pas** une interface web, ni un serveur multi-utilisateurs
+clé en main : c'est une suite de serveurs MCP locaux, sans session, sans OAuth
+intégré et sans TLS natif. Pour un accès distant, placez un reverse proxy
+authentifié devant.
+
 ## Démarrage rapide
 
 ```bash
@@ -54,7 +84,7 @@ port.
 |---|---|
 | Endpoint MCP | `POST /mcp` ; `GET /mcp` pour un flux SSE optionnel |
 | Santé | `GET /health` |
-| Version HTTP | HTTP/1.1 |
+| Version HTTP | HTTP/1.1 (HTTP/1.0 accepté en entrée) |
 | TLS | Non fourni nativement : reverse proxy HTTPS devant le serveur |
 | Content-Type requis | `application/json` (un `charset` est accepté) |
 | Réponse JSON-RPC | `200 application/json` ou `200 text/event-stream` selon `Accept` |
@@ -227,12 +257,12 @@ dont la perte de contenu serait acceptable.
 
 | Variable | Rôle | Défaut |
 |---|---|---|
-| `MCP_HTTP_HOST` | Adresse d'écoute (`127.0.0.1`, `::1`, `0.0.0.0`…) | `127.0.0.1` |
+| `MCP_HTTP_HOST` | Adresse IP d'écoute (`127.0.0.1`, `::1`, `0.0.0.0`…) | `127.0.0.1` |
 | `MCP_HTTP_PORT` | Port d'écoute du serveur courant | 8101 à 8108 selon le serveur |
-| `MCP_HTTP_TOKEN` | Jeton Bearer exigé sur `POST /mcp` (`Authorization: Bearer …`) | vide = pas d'auth |
+| `MCP_HTTP_TOKEN` | Jeton Bearer exigé sur `POST /mcp` **et** `GET /mcp` (SSE) (`Authorization: Bearer …`) | vide = pas d'auth |
 | `MCP_HTTP_MAX_BODY` | Taille maximale du corps JSON (octets, borné 1 Kio–16 Mio) | `1048576` |
 | `MCP_HTTP_ALLOWED_ORIGINS` | Origines supplémentaires autorisées (liste séparée par virgules) | vide |
-| `MCP_HTTP_LOG_REQUESTS` | `1` = journaliser chaque requête HTTP sur stderr | désactivé |
+| `MCP_HTTP_LOG_REQUESTS` | `1` = journaliser méthode/chemin/statut/durée/version MCP sur stderr (jamais le corps) | désactivé |
 
 Les origines loopback du port courant (`http://127.0.0.1:<port>`,
 `http://localhost:<port>`, `http://[::1]:<port>`) sont toujours autorisées.
@@ -407,6 +437,20 @@ documentation. Un client qui ne supporte que stdio ne peut pas se connecter
 directement à cette version : utilisez un client compatible HTTP (Claude
 Desktop récent, Kimi Code, etc.) ou un pont stdio→HTTP externe.
 
+### Quelle clé utiliser selon le client ?
+
+| Client | Clé / transport | Remarque |
+|---|---|---|
+| **Qwen Code / Qwen Studio** | `httpUrl` | `url` = SSE legacy, à éviter |
+| **Claude Code / Desktop récent** | `type: "http"` + `url` | Streamable HTTP |
+| **Gemini CLI** | `httpUrl` | `url` = SSE legacy |
+| **VS Code / Copilot** | `url` + `"type": "http"` | Selon la version |
+| **Client générique Streamable HTTP** | `url` | Vérifier qu’il envoie `Accept` JSON/SSE |
+
+En cas de doute, testez d’abord avec `curl` (voir « Dépannage ») : si `curl`
+fonctionne mais le client échoue, c’est presque toujours une clé de transport
+(`url` vs `httpUrl`) ou un en-tête `Accept`.
+
 ### Qwen Code / Qwen Studio
 
 Qwen distingue deux clés de configuration :
@@ -461,7 +505,7 @@ mcp_common/               Modules partagés par tous les serveurs MCP
 ├── runtime.pbi           Console : écriture stderr, CheckRuntime()
 ├── logging.pbi           LogDebug/LogError sur stderr
 ├── json_helpers.pbi      Lecture d'arguments + construction de schémas
-├── http.pbi              Client HTTP GET/POST (WinHTTP / curl)
+├── http.pbi              Client HTTP GET/POST + limite de réponse (WinHTTP / curl)
 ├── protocol.pbi          Identité serveur + réponse initialize
 ├── jsonrpc.pbi           Noyau JSON-RPC 2.0 transport-agnostique
 ├── http_server.pbi       Serveur HTTP/1.1 (POST/GET /mcp, /health)
@@ -510,6 +554,101 @@ tests/
 Nouveau serveur ? Incluez `mcp_common/` (voir `examples/minimal_server.pb`),
 renseignez les hooks `*G_ToolHandler` / `*G_CatalogBuilder`, vérifiez
 `CheckRuntime()` et appelez `MCPHttpMainLoop(<port>)`.
+
+## Dépannage (par symptôme)
+
+### `SSE error: Non-200 status code (405)` avec Qwen Studio/Code
+
+Qwen utilise `url` pour l’ancien transport **SSE legacy** et `httpUrl` pour le
+**Streamable HTTP**. Utilisez `httpUrl` (voir `examples/qwen-settings.json`),
+puis redémarrez Qwen. Vérifiez le serveur :
+
+```bash
+curl -s http://127.0.0.1:8101/health
+curl -N -H "Accept: text/event-stream" http://127.0.0.1:8101/mcp
+```
+
+La seconde commande doit renvoyer `HTTP/1.1 200 OK`, `Content-Type:
+text/event-stream` et `: connected`.
+
+### `401 Unauthorized`
+
+`MCP_HTTP_TOKEN` est défini mais le client n’envoie pas le bon Bearer, ou le
+bloc `headers` manque sur l’un des 8 serveurs. Le jeton est requis sur
+`POST /mcp` **et** sur `GET /mcp` (SSE).
+
+### `403 Forbidden` / « Origine non autorisée »
+
+Le client envoie un en-tête `Origin` non loopback. Utilisez un client non
+navigateur, ou déclarez l’origine exacte dans `MCP_HTTP_ALLOWED_ORIGINS`
+(séparateur virgule). Les origines loopback acceptées sont
+`http://127.0.0.1:<port>`, `http://localhost:<port>` et
+`http://[::1]:<port>` pour le port courant uniquement.
+
+### `405 Method Not Allowed` sur `GET /mcp`
+
+C’est attendu si le client n’envoie pas `Accept: text/event-stream`. Un client
+Streamable HTTP doit utiliser `POST /mcp` ; s’il ouvre un flux, il doit
+envoyer l’en-tête `Accept` SSE.
+
+### Port déjà utilisé / serveur qui ne démarre pas
+
+Un autre processus écoute sur le port. Arrêtez les serveurs
+(`stop_all.bat` / `./stop_all.sh`) ou choisissez un autre `MCP_HTTP_PORT`.
+N’utilisez pas `MCP_HTTP_PORT` globalement avec `start_all` : les 8 serveurs
+entreraient en conflit.
+
+### `fetch` refuse une URL
+
+L’outil refuse les IP privées, loopback, ULA, link-local, et les hostnames qui
+résolvent vers ces plages. Vérifiez la résolution :
+
+```bash
+getent hosts example.com       # Linux
+nslookup example.com           # Windows
+dscacheutil -q host -a name example.com   # macOS
+```
+
+Si l’outil DNS est absent ou échoue, la requête est refusée (fail closed).
+Une réponse de plus de 2 Mo est aussi refusée.
+
+### `ACCES_REFUSE` sur un chemin valide
+
+Un composant du chemin est un symlink ou une junction sous `MCP_ROOT`. Le
+serveur les refuse pour empêcher une évasion. Utilisez le chemin réel, ou
+déplacez la cible hors de la racine surveillée. La racine elle-même peut être
+un lien, mais `change_root` refuse une nouvelle racine qui en est un.
+
+### Logs et diagnostic
+
+`MCP_HTTP_LOG_REQUESTS=1` journalise méthode, chemin, statut, durée et version
+MCP sur stderr — jamais le corps. Avec `start_all`, les logs sont dans
+`build/logs/<serveur>.log`.
+
+```bash
+# Vérifier initialize puis tools/list
+curl -s -X POST http://127.0.0.1:8101/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+curl -s -X POST http://127.0.0.1:8101/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+```
+
+## Glossaire
+
+| Terme | Définition |
+|---|---|
+| **MCP** | Model Context Protocol : protocole client/serveur pour exposer des outils à un LLM. |
+| **JSON-RPC 2.0** | Format de requête/réponse JSON avec `id`, `method`, `params`, `result`/`error`. |
+| **Streamable HTTP** | Transport MCP standard : `POST /mcp`, réponse JSON ou SSE, sessions optionnelles. |
+| **SSE** | Server-Sent Events (`text/event-stream`) : flux unidirectionnel serveur→client. Ici optionnel et keep-alive uniquement. |
+| **Loopback** | Adresse locale (`127.0.0.1`, `::1`) non accessible depuis le réseau. |
+| **Bearer** | Jeton envoyé dans `Authorization: Bearer <token>`. |
+| **SSRF** | Server-Side Request Forgery : faire requêter au serveur une cible interne (localhost, réseau privé). |
+| **Symlink / junction** | Lien filesystem vers une autre cible ; peut permettre de sortir de `MCP_ROOT`. |
+| **TOCTOU** | Time-of-check to time-of-use : changement de cible entre la validation et l’action. |
+| **Fail closed** | En cas de doute (DNS indisponible, lien détecté), refuser plutôt que continuer. |
 
 ## Documentation
 

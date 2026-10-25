@@ -3,7 +3,7 @@
 ;  API REST GitHub v3 : repos, issues, pull requests, commits, recherches
 ; ============================================================================
 ;  Compilation : build.bat / build.sh
-;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON par defaut, SSE optionnel)
 ;  Config      : MCP_GITHUB_TOKEN    = token PAT (requis)
 ;                MCP_GITHUB_API_BASE = base API (defaut https://api.github.com)
 ; ============================================================================

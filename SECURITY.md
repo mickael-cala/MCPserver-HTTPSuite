@@ -37,6 +37,7 @@ JSON-RPC serveur→client n'y est envoyé.
 | Écoute par défaut | `MCP_HTTP_HOST=127.0.0.1` (loopback uniquement) |
 | Authentification | `MCP_HTTP_TOKEN` : `Authorization: Bearer <token>` exigé sur `POST /mcp` et `GET /mcp` (SSE) ; `401` sinon |
 | Origines | `Origin` absente ou loopback du port courant (`127.0.0.1`, `localhost`, `[::1]`) ; sinon `403`. `MCP_HTTP_ALLOWED_ORIGINS` pour une liste explicite |
+| Version MCP | `MCP-Protocol-Version` accepté : `2025-03-26` / `2025-06-18` ; absent → traité comme `2025-03-26` ; invalide → `400` |
 | Taille du corps | 1 Mio par défaut (`MCP_HTTP_MAX_BODY`, borné 1 Kio–16 Mio) ; `413` au-delà |
 | En-têtes | Limite 16 Kio ; `431` au-delà |
 | Timeout | 10 s d'inactivité pour les en-têtes/corps ; `408` |
@@ -44,7 +45,7 @@ JSON-RPC serveur→client n'y est envoyé.
 | Connexions | 64 requêtes en cours et 64 flux SSE maximum ; `503` au-delà |
 | SSE | Flux `text/event-stream` uniquement si demandé ; `Origin` et jeton vérifiés ; keep-alive 15 s ; pas de messages serveur→client |
 | CORS | Aucun `Access-Control-Allow-Origin` ; les navigateurs ne peuvent pas lire les réponses |
-| Journalisation | Méthode, chemin, statut et durée sur **stderr** ; jamais le corps, jamais un secret |
+| Journalisation | Méthode, chemin, statut, durée et version MCP sur **stderr** ; jamais le corps, jamais un secret |
 | TLS | **Non fourni** : utiliser un reverse proxy HTTPS devant le serveur, ou rester sur loopback |
 
 ### Recommandations de déploiement
@@ -64,6 +65,26 @@ JSON-RPC serveur→client n'y est envoyé.
 - Un seul client à la fois est traité par processus : une requête lente peut
   retarder les autres. Ne pas exposer un serveur unique à plusieurs
   utilisateurs sans proxy et limite de concurrence.
+
+## Limites de sécurité connues
+
+- **TOCTOU symlink** : un attaquant local avec un accès écriture à `MCP_ROOT`
+  pourrait remplacer un composant entre la validation et l'opération. Le
+  confinement bloque les liens présents au moment du contrôle, pas une course
+  locale.
+- **DNS rebinding** : `fetch` résout le hostname avant la connexion HTTP ; un
+  DNS malveillant peut changer la réponse entre les deux. La résolution et le
+  refus des IP privées réduisent fortement le risque, sans le supprimer.
+- **Pas d'OAuth 2.1** : le jeton Bearer est une authentification simple, sans
+  découverte ni rotation automatique. Pour un accès distant, utiliser un
+  reverse proxy avec OAuth ou une passerelle authentifiée.
+- **Pas de TLS natif** : HTTP en clair, à réserver au loopback ou à un reverse
+  proxy TLS.
+- **Pas de rate limiting** : une exposition réseau doit être protégée en amont.
+- **Comparaison du secret non constant-time** : `change_root` compare les
+  chaînes directement ; risque de timing très faible en loopback.
+- **Liens Markdown** : les `href` `javascript:` du HTML source peuvent
+  persister dans le Markdown ; le client doit assainir le rendu.
 
 ## Secrets et variables d'environnement
 

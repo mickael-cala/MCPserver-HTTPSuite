@@ -3,7 +3,7 @@
 ;  Exploration SQL en lecture seule : SQLite (integre) + PostgreSQL (optionnel)
 ; ============================================================================
 ;  Compilation : build.bat / build.sh
-;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON par defaut, SSE optionnel)
 ;  Config      : MCP_DB_PATH           = fichier SQLite (defaut: database.db)
 ;                MCP_DB_POSTGRES_DSN   = chaine de connexion PostgreSQL
 ;                MCP_DB_ALLOW_WRITE=1  = autorise INSERT/UPDATE/DELETE/DDL

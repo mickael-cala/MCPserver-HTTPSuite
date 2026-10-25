@@ -3,7 +3,7 @@
 ;  Recuperation de pages web + conversion HTML -> Markdown
 ; ============================================================================
 ;  Compilation : build.bat / build.sh (ou Options du compilateur -> Console)
-;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON uniquement, sans SSE)
+;  Transport   : JSON-RPC 2.0 sur HTTP (POST /mcp, JSON par defaut, SSE optionnel)
 ;  Modules     : mcp_common/ (runtime, logging, json_helpers, protocol,
 ;                jsonrpc, http_server)
 ; ============================================================================
