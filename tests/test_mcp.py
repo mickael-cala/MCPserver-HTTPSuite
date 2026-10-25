@@ -29,7 +29,9 @@ Usage :
 import json
 import os
 import re
+import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -127,6 +129,40 @@ def run_checks_filemcp(client, root):
         err, text = client.tool_text("read_file", {"path": traversal})
         check(f"travers refuse: {traversal}", err, text)
 
+    print("\n== fileMCP : securite - liens/junctions ==")
+    outside = tempfile.mkdtemp(prefix="filemcp-outside-")
+    (Path(outside) / "secret.txt").write_text("secret", encoding="utf-8")
+    link = root / "escape_link"
+    created = False
+    try:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["cmd.exe", "/c", "mklink", "/J", str(link), outside],
+                capture_output=True, text=True)
+            created = result.returncode == 0
+        else:
+            os.symlink(outside, link)
+            created = True
+    except OSError:
+        created = False
+    if created:
+        err, text = client.tool_text("list_files", {"path": "escape_link"})
+        check("lien/junction dans root refuse", err, text[:120])
+        err, text = client.tool_text("read_file", {"path": "escape_link/secret.txt"})
+        check("lecture via lien refusee", err, text[:120])
+    else:
+        print("  [SKIP] impossible de creer un lien/junction de test")
+    shutil.rmtree(outside, ignore_errors=True)
+    try:
+        if link.exists() or link.is_symlink():
+            if os.name == "nt":
+                subprocess.run(["cmd.exe", "/c", "rmdir", str(link)],
+                               capture_output=True)
+            else:
+                link.unlink()
+    except OSError:
+        pass
+
     print("\n== fileMCP : securite - change_root ==")
     err, text = client.tool_text("change_root", {"newRoot": str(Path.home()), "secret": "mauvais-secret"})
     check("change_root refuse avec mauvais secret", err, text)
@@ -187,6 +223,9 @@ def run_tests_fetch():
 
         err, text = client.tool_text("fetch", {"url": "not-a-url"})
         check("URL invalide signalee en erreur", err, text[:120])
+
+        err, text = client.tool_text("fetch", {"url": "http://foo.localhost:9/"})
+        check("hostname resolu vers loopback refuse", err, text[:120])
 
 
 # ---------------------------------------------------------------------------

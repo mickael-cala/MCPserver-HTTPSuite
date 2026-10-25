@@ -108,17 +108,24 @@ Les flux SSE ouverts reçoivent un commentaire `: connected` puis des
 | `delete_file` | Supprimer un fichier ou dossier vide | `path` |
 | `move_file` | Déplacer ou renommer un fichier | `oldPath`, `newPath` |
 | `get_file_info` | Infos détaillées fichier/dossier | `path` |
-| `search_files` | Rechercher du texte (récursif) | `path`, `pattern` |
-| `change_root` | Changer la zone autorisée | `newRoot`, `secret` |
+| `search_files` | Rechercher du texte (récursif, borné : profondeur 32, 10 000 entrées, 10 s) | `path`, `pattern` |
+| `change_root` | Changer la zone autorisée (refuse une racine lien/junction) | `newRoot`, `secret` |
+
+Tous les chemins sont normalisés et confinés à `MCP_ROOT`. Les composants
+**symlinks/junctions** situés sous la racine sont refusés (Windows : bit
+reparse ; Linux/macOS : `#PB_FileSystem_Link`).
 
 ### MCP-Fetch-PB — récupération web
 
 | Outil | Description | Paramètres |
 |---|---|---|
-| `fetch` | Récupère une URL et retourne son contenu en Markdown (ou HTML brut si `raw=true`) | `url`, `max_length` (défaut 5000), `start_index` (défaut 0), `raw` (défaut false) |
+| `fetch` | Récupère une URL et retourne son contenu en Markdown (ou HTML brut si `raw=true`), réponse plafonnée à 2 Mo | `url`, `max_length` (défaut 5000), `start_index` (défaut 0), `raw` (défaut false) |
 
-Les URLs non HTTP/HTTPS et les IPs littérales sont refusées (SSRF) ; un timeout
-plafonne la durée de chaque requête.
+Les URLs non HTTP/HTTPS, les IPs littérales privées et les **hostnames qui
+résolvent vers une IP privée/loopback/ULA/link-local** sont refusés (SSRF).
+La résolution DNS utilise `getent` (Linux), `nslookup` (Windows) ou
+`dscacheutil` (macOS), avec un timeout de 5 s ; en cas d'échec, la requête est
+refusée. Un timeout plafonne la durée et la réponse est limitée à 2 Mo.
 
 ### MCP-SequentialThinking-PB — raisonnement séquentiel
 
@@ -252,7 +259,8 @@ rebinding et les requêtes navigateur non désirées.
 | `MCP_GITHUB_API_BASE` | Base de l'API (défaut `https://api.github.com`). | githubMCP |
 
 Tous les chemins passés aux outils fileMCP sont normalisés et bloqués s'ils
-tentent de sortir de la racine autorisée. Voir [SECURITY.md](SECURITY.md).
+tentent de sortir de la racine autorisée, y compris via des symlinks ou
+junctions. Voir [SECURITY.md](SECURITY.md).
 
 ## Compilation
 
@@ -315,7 +323,7 @@ run_all.bat        # ou ./run_all.sh : tout vérifier
   `tests/test_<module>.pb`.
 - **Intégration (Python)** : `tests/mcp_client.py` (harnais client MCP HTTP
   avec validation de conformité JSON-RPC 2.0) + `tests/test_mcp.py`
-  (**121 tests** qui exercent les outils, le transport HTTP et les cas de
+  (**124 tests** qui exercent les outils, le transport HTTP et les cas de
   sécurité) :
 
 ```bash
@@ -339,7 +347,7 @@ variable `<NOM>_BIN` (ex. `FILEMCP_BIN`, `MEMORYMCP_BIN`) force un chemin.
 
 Résultat de référence : `run_all` **10/10 étapes**, **199 tests unitaires**,
 **21 vérifications de robustesse/performance** (T6.14 conditionnel à une clé
-Context7), **121 tests d'intégration**. Validé sous **Windows** et
+Context7), **124 tests d'intégration**. Validé sous **Windows** et
 **Linux (WSL2 Ubuntu 26.04)** ; macOS reste à valider.
 
 ## Configuration d'un client MCP
@@ -486,7 +494,7 @@ run_all.bat / run_all.sh    # Compilation + tests + rapport
 tests/
 ├── mcp_client.py           # Harnais de test externe (client MCP HTTP)
 ├── mock_github.py          # Mock local de l'API GitHub (intégration)
-├── test_mcp.py             # Tests fonctionnels + transport (121 tests)
+├── test_mcp.py             # Tests fonctionnels + transport (124 tests)
 ├── unit_test.pbi           # Micro-framework de tests unitaires PureBasic
 ├── test_common.pb          # Tests unitaires des modules mcp_common (46 tests)
 ├── test_memory.pb          # Tests unitaires du serveur Memory (33 tests)

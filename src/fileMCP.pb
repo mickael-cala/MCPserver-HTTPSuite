@@ -20,6 +20,10 @@ IncludeFile "../mcp_common/http_server.pbi"
 Global G_AllowedRoot.s
 Global G_RootSecret.s
 
+#MAX_SEARCH_DEPTH   = 32
+#MAX_SEARCH_ENTRIES = 10000
+#SEARCH_TIMEOUT_MS  = 10000
+
 ; ---------------------------------------------------------------------------
 ; Utilitaires de chemins (100 % natifs)
 ; ---------------------------------------------------------------------------
@@ -95,6 +99,43 @@ Procedure.s NormalizePath(Path.s)
   ProcedureReturn Result
 EndProcedure
 
+; ---------------------------------------------------------------------------
+; Detection des liens symboliques / junctions (confinement reel)
+; ---------------------------------------------------------------------------
+Procedure.i IsLinkOrJunction(Path.s)
+  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
+    ; GetFileAttributesW ne suit pas le lien : le bit reparse est present.
+    Protected Attr.i = GetFileAttributes_(Path)
+    If Attr = -1 Or Attr = $FFFFFFFF : ProcedureReturn #False : EndIf
+    ProcedureReturn Bool((Attr & $400) <> 0)   ; FILE_ATTRIBUTE_REPARSE_POINT
+  CompilerElse
+    Protected Attr.i = GetFileAttributes(Path)
+    If Attr = -1 : ProcedureReturn #False : EndIf
+    ProcedureReturn Bool((Attr & #PB_FileSystem_Link) <> 0)
+  CompilerEndIf
+EndProcedure
+
+; Verifie chaque composant sous FullRoot (racine incluse non verifiee).
+Procedure.i PathHasLinkInRoot(FullPath.s, FullRoot.s)
+  If Len(FullPath) <= Len(FullRoot) : ProcedureReturn #False : EndIf
+  Protected Rel.s = Mid(FullPath, Len(FullRoot) + 1)
+  Protected Sep.s = GetPathSeparator()
+  Protected Count.i = CountString(Rel, Sep) + 1
+  Protected Prefix.s = FullRoot
+  Protected i.i, Part.s
+
+  For i = 1 To Count
+    Part = StringField(Rel, i, Sep)
+    If Part <> ""
+      Prefix = EnsureTrailingSlash(Prefix) + Part
+      ; Verifier le lien avant FileSize (un lien casse a FileSize = -1).
+      If IsLinkOrJunction(Prefix) : ProcedureReturn #True : EndIf
+      If FileSize(Prefix) = -1 : Break : EndIf
+    EndIf
+  Next
+  ProcedureReturn #False
+EndProcedure
+
 Procedure.i NativeCreateDirectories(Path.s)
   Protected Sep.s = GetPathSeparator()
   Path = ReplaceString(ReplaceString(Path, "/", Sep), "\", Sep)
@@ -161,6 +202,11 @@ Procedure.s ValiderChemin(CheminDemande.s)
 
   ; Confinement sous la racine autorisee
   If Left(NormPath, Len(NormRoot)) <> NormRoot
+    ProcedureReturn ""
+  EndIf
+
+  ; Interdire les liens/junctions a l'interieur de la racine (evasion).
+  If PathHasLinkInRoot(FullPath, FullRoot)
     ProcedureReturn ""
   EndIf
 
@@ -348,38 +394,45 @@ Procedure.s ToolGetFileInfo(Path.s)
   ProcedureReturn Res
 EndProcedure
 
-Procedure SearchRecursive(BaseDir.s, Pattern.s, List Matches.s(), *Count.Integer)
-  If *Count\i >= 100 : ProcedureReturn : EndIf
+Procedure SearchRecursive(BaseDir.s, Pattern.s, List Matches.s(), *Count.Integer, Depth.i, *Deadline.Integer, *Visited.Integer)
+  If *Count\i >= 100 Or Depth > #MAX_SEARCH_DEPTH : ProcedureReturn : EndIf
+  If ElapsedMilliseconds() > *Deadline\i Or *Visited\i >= #MAX_SEARCH_ENTRIES : ProcedureReturn : EndIf
 
   Protected Dir.i = ExamineDirectory(#PB_Any, BaseDir, "*")
   If Dir
     While NextDirectoryEntry(Dir)
+      *Visited\i + 1
+      If *Visited\i > #MAX_SEARCH_ENTRIES : Break : EndIf
+
       Protected Name.s = DirectoryEntryName(Dir)
       If Name <> "." And Name <> ".."
         Protected Full.s = EnsureTrailingSlash(BaseDir) + Name
-        If DirectoryEntryType(Dir) = #PB_DirectoryEntry_Directory
-          SearchRecursive(Full, Pattern, Matches(), *Count)
-        Else
-          If Not IsBinaryFile(Full) And DirectoryEntrySize(Dir) <= 2 * 1024 * 1024
-            Protected F.i = ReadFile(#PB_Any, Full)
-            If F
-              Protected LineNum.i = 0
-              While Not Eof(F)
-                LineNum + 1
-                Protected Line.s = ReadString(F, #PB_UTF8)
-                If FindString(LCase(Line), LCase(Pattern))
-                  AddElement(Matches())
-                  Matches() = Full + ":" + Str(LineNum) + ": " + Trim(Line)
-                  *Count\i + 1
-                  If *Count\i >= 100 : Break : EndIf
-                EndIf
-              Wend
-              CloseFile(F)
+        ; Ignorer liens/junctions : evite les sorties de racine et les cycles.
+        If Not IsLinkOrJunction(Full)
+          If DirectoryEntryType(Dir) = #PB_DirectoryEntry_Directory
+            SearchRecursive(Full, Pattern, Matches(), *Count, Depth + 1, *Deadline, *Visited)
+          Else
+            If Not IsBinaryFile(Full) And DirectoryEntrySize(Dir) <= 2 * 1024 * 1024
+              Protected F.i = ReadFile(#PB_Any, Full)
+              If F
+                Protected LineNum.i = 0
+                While Not Eof(F)
+                  LineNum + 1
+                  Protected Line.s = ReadString(F, #PB_UTF8)
+                  If FindString(LCase(Line), LCase(Pattern))
+                    AddElement(Matches())
+                    Matches() = Full + ":" + Str(LineNum) + ": " + Trim(Line)
+                    *Count\i + 1
+                    If *Count\i >= 100 : Break : EndIf
+                  EndIf
+                Wend
+                CloseFile(F)
+              EndIf
             EndIf
           EndIf
         EndIf
       EndIf
-      If *Count\i >= 100 : Break : EndIf
+      If *Count\i >= 100 Or ElapsedMilliseconds() > *Deadline\i Or *Visited\i >= #MAX_SEARCH_ENTRIES : Break : EndIf
     Wend
     FinishDirectory(Dir)
   EndIf
@@ -392,12 +445,17 @@ Procedure.s ToolSearchFiles(Path.s, Pattern.s)
 
   NewList Matches.s()
   Protected Total.Integer\i = 0
-  SearchRecursive(SafePath, Pattern, Matches(), @Total)
+  Protected Deadline.i = ElapsedMilliseconds() + #SEARCH_TIMEOUT_MS
+  Protected Visited.i = 0
+  SearchRecursive(SafePath, Pattern, Matches(), @Total, 0, @Deadline, @Visited)
 
   Protected Res.s = Str(Total\i) + " resultat(s) pour " + #DQUOTE$ + Pattern + #DQUOTE$ + " :" + #LF$
   ForEach Matches()
     Res + Matches() + #LF$
   Next
+  If Visited >= #MAX_SEARCH_ENTRIES Or ElapsedMilliseconds() > Deadline
+    Res + "[Recherche interrompue : limite de parcours atteinte]" + #LF$
+  EndIf
   ProcedureReturn Res
 EndProcedure
 
@@ -412,7 +470,12 @@ Procedure.s ToolChangeRoot(NewRoot.s, Secret.s)
     ProcedureReturn "Repertoire introuvable : " + NewRoot
   EndIf
 
-  G_AllowedRoot = NormalizePath(NewRoot)
+  Protected NewNormalized.s = NormalizePath(NewRoot)
+  If IsLinkOrJunction(NewNormalized)
+    ProcedureReturn "Modification refusee : la racine ne doit pas etre un lien symbolique/junction."
+  EndIf
+
+  G_AllowedRoot = NewNormalized
   LogDebug("Racine autorisee modifiee : " + G_AllowedRoot)
   ProcedureReturn "Racine autorisee modifiee : " + G_AllowedRoot
 EndProcedure

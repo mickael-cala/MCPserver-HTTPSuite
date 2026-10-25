@@ -15,7 +15,7 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
 - le système d'exploitation et la version de PureBasic ;
 - le serveur concerné, l'URL/le port, la requête JSON-RPC envoyée et la
   réponse HTTP/JSON obtenue ;
-- le résultat de `python tests/test_mcp.py` (121 tests) et/ou
+- le résultat de `python tests/test_mcp.py` (124 tests) et/ou
   `run_all.bat` / `./run_all.sh`.
 
 ## Soumettre une modification
@@ -81,5 +81,6 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
 ## Sécurité
 
 Voir [SECURITY.md](SECURITY.md). Toute modification touchant au confinement
-des chemins, aux garde-fous d'écriture, à la couche HTTP (Origin, jeton,
+des chemins (symlinks/junctions), à l'anti-SSRF (résolution DNS), au plafond
+de réponse fetch, aux garde-fous d'écriture, à la couche HTTP (Origin, jeton,
 taille de corps) ou à la gestion des secrets exige une revue attentive.

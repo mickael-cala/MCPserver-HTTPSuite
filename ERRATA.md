@@ -46,6 +46,27 @@
 - **Une seule instance par port** : un second processus sur le même port
   échoue au démarrage (code 1, message explicite).
 
+## Durcissement sécurité (Phase 8)
+
+- **fileMCP** : les symlinks/junctions situés **sous** `MCP_ROOT` sont
+  refusés. La racine elle-même peut être un lien (choix de l'utilisateur),
+  mais `change_root` refuse une nouvelle racine qui est un lien/junction.
+  Résiduel : un attaquant local avec un accès écriture à la racine pourrait
+  permuter un composant entre la validation et l'opération (TOCTOU).
+- **search_files** : profondeur max 32, 10 000 entrées, timeout 10 s ; les
+  liens sont ignorés. Une recherche très profonde est donc tronquée.
+- **fetch** : la résolution DNS utilise `getent` (Linux), `nslookup`
+  (Windows) ou `dscacheutil` (macOS), avec un timeout de 5 s. Si l'outil de
+  résolution est absent, échoue ou dépasse le délai, la requête est
+  **refusée** (fail closed). Toute IP privée, loopback, ULA, link-local ou de
+  documentation est refusée.
+  Résiduel : la résolution est faite avant la connexion HTTP ; un DNS
+  malveillant peut changer la réponse entre les deux (DNS rebinding).
+- **fetch** : la réponse est plafonnée à **2 Mo** avant conversion Markdown.
+  Un serveur qui envoie plus est rejeté (`reponse trop volumineuse`).
+- Les liens `javascript:` présents dans le HTML source peuvent encore
+  apparaître dans le Markdown généré ; les clients doivent assainir le rendu.
+
 ## Limitations métier
 
 - **`read_file` tronque au-delà de 20 000 octets** ; utiliser `read_file_lines`
@@ -66,7 +87,7 @@
   drapeau, pas le texte.
 - **Validation** : la version 2.0.0 (HTTP) est compilée et testée sous
   **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, 199 unitaires,
-  21 robustesse/perf, 121 intégration). La validation **macOS** reste à faire.
+  21 robustesse/perf, 124 intégration). La validation **macOS** reste à faire.
 - Aucune CI automatisée (PureBasic sous licence).
 
 ## Résultats des tests
@@ -74,7 +95,7 @@
 Dernières exécutions de `run_all` (Windows et Linux/WSL2) : **10/10 étapes** — tests
 unitaires 46 + 33 + 37 + 19 + 24 + 40 = **199** réussis (mcp_common, Memory,
 Database, Context7, Git, GitHub), robustesse/performance **21/21**,
-tests d'intégration **121/121** (8 serveurs + transport ; PostgreSQL et
+tests d'intégration **124/124** (8 serveurs + transport ; PostgreSQL et
 Context7 live sont ignorés sans configuration/réseau, GitHub utilise un mock
 local).
 

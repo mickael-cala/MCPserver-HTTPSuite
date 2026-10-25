@@ -15,6 +15,9 @@ Les 8 serveurs MCP (phases 0 à 7, voir [PLAN.md](PLAN.md)) sont livrés en
 
 ## Moyen terme
 
+- **Sécurité restante** : rate limiting, comparaison constante-time du secret,
+  validation de schéma côté serveur, assainissement des liens Markdown,
+  et réduction de la fenêtre TOCTOU symlink/DNS.
 - **SSE avancé** : notifications serveur→client, progression d'outils et
   reprise de flux (`Last-Event-ID`) ; aujourd'hui le flux SSE sert de canal de
   compatibilité avec keep-alive.

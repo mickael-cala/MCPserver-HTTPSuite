@@ -15,6 +15,10 @@
 ;    "Authorization: Bearer xxx" + #CRLF$ + "Accept: application/json"
 ; ============================================================================
 
+; Limite optionnelle de la taille de reponse (0 = illimitee).
+; Utilisee par HttpGetLimited() ; le serveur est mono-thread.
+Global G_HttpMaxResponseBytes.i = 0
+
 ; ---------------------------------------------------------------------------
 ; Encodage URL d'un composant de requete (alphanum + -._~ conserves)
 ; ---------------------------------------------------------------------------
@@ -158,7 +162,7 @@ Procedure.s HttpWinRequest(Url.s, Method.s, Headers.s, Body.s, TimeoutSec.i, *St
   EndIf
 
   Protected *Buf = AllocateMemory(65536)
-  Protected RespBody.s = "", Avail.i = 0, ReadLow.i = 0
+  Protected RespBody.s = "", Avail.i = 0, ReadLow.i = 0, TotalRead.i = 0
   If *Buf
     While whttp_WinHttpQueryDataAvailable(hRequest, @Avail)
       If Avail <= 0 : Break : EndIf
@@ -167,10 +171,17 @@ Procedure.s HttpWinRequest(Url.s, Method.s, Headers.s, Body.s, TimeoutSec.i, *St
       If whttp_WinHttpReadData(hRequest, *Buf, Avail, @ReadLow) = 0 Or ReadLow <= 0
         Break
       EndIf
+      If G_HttpMaxResponseBytes > 0 And TotalRead + ReadLow > G_HttpMaxResponseBytes
+        *Status\i = -3
+        Break
+      EndIf
+      TotalRead + ReadLow
       RespBody + PeekS(*Buf, ReadLow, #PB_UTF8 | #PB_ByteLength)
     Wend
     FreeMemory(*Buf)
   EndIf
+
+  If *Status\i = -3 : RespBody = "" : EndIf
 
   whttp_WinHttpCloseHandle(hRequest)
   whttp_WinHttpCloseHandle(hConnect)
@@ -210,6 +221,9 @@ Procedure.s HttpCurl(Url.s, Method.s, Headers.s, Body.s, TimeoutSec.i, *Status.I
   WriteString(F, "silent" + #LF$, #PB_UTF8)
   WriteString(F, "show-error" + #LF$, #PB_UTF8)
   WriteString(F, "max-time = " + Str(TimeoutSec) + #LF$, #PB_UTF8)
+  If G_HttpMaxResponseBytes > 0
+    WriteString(F, "max-filesize = " + Str(G_HttpMaxResponseBytes) + #LF$, #PB_UTF8)
+  EndIf
   WriteString(F, "request = " + #DQUOTE$ + Method + #DQUOTE$ + #LF$, #PB_UTF8)
   WriteString(F, "url = " + #DQUOTE$ + CurlEsc(Url) + #DQUOTE$ + #LF$, #PB_UTF8)
   WriteString(F, "output = " + #DQUOTE$ + CurlEsc(OutFile) + #DQUOTE$ + #LF$, #PB_UTF8)
@@ -264,6 +278,11 @@ Procedure.s HttpCurl(Url.s, Method.s, Headers.s, Body.s, TimeoutSec.i, *Status.I
     If *Status\i = 0 : *Status\i = 200 : EndIf   ; write-out vide : succes
   EndIf
 
+  If ExitCode = 63
+    *Status\i = -3
+    Result = ""
+  EndIf
+
   DeleteFile(CfgFile)
   DeleteFile(OutFile)
   If Method = "POST" And Body <> "" : DeleteFile(BodyFile) : EndIf
@@ -279,3 +298,13 @@ Procedure.s HttpPostHeaders(Url.s, Headers.s, Body.s, TimeoutSec.i, *Status.Inte
 EndProcedure
 
 CompilerEndIf
+
+; ---------------------------------------------------------------------------
+; GET avec limite de taille de reponse (MaxBytes <= 0 : illimite)
+; ---------------------------------------------------------------------------
+Procedure.s HttpGetLimited(Url.s, Headers.s, TimeoutSec.i, MaxBytes.i, *Status.Integer)
+  G_HttpMaxResponseBytes = MaxBytes
+  Protected Res.s = HttpGetHeaders(Url, Headers, TimeoutSec, *Status)
+  G_HttpMaxResponseBytes = 0
+  ProcedureReturn Res
+EndProcedure

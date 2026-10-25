@@ -6,7 +6,7 @@
 
 - [ ] Compilation : `build.bat` / `./build.sh` OK
 - [ ] Tests : `run_all.bat` / `./run_all.sh` → 10/10 étapes (199 unitaires,
-      21 robustesse/perf, 121 intégration)
+      21 robustesse/perf, 124 intégration)
 - [ ] Nouvel outil MCP éventuel : ajouté au catalogue, au dispatch, entrées assainies, testé
 - [ ] Messages d'échec détectés comme erreurs (`Erreur` / `Impossible` / `Echec` / `introuvable` / `refusee` / `depasse`)
 - [ ] Transport HTTP respecté : `POST /mcp`, JSON par défaut, SSE optionnel

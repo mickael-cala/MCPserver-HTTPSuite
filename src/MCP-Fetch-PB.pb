@@ -13,38 +13,182 @@ EnableExplicit
 IncludeFile "../mcp_common/runtime.pbi"
 IncludeFile "../mcp_common/logging.pbi"
 IncludeFile "../mcp_common/json_helpers.pbi"
+IncludeFile "../mcp_common/http.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
 IncludeFile "../mcp_common/jsonrpc.pbi"
 IncludeFile "../mcp_common/http_server.pbi"
 
+#FETCH_MAX_BYTES = 2 * 1024 * 1024
+
 ; ---------------------------------------------------------------------------
-; Validation d'URL et garde-fous de securite
+; Validation d'URL et garde-fous de securite (SSRF)
 ; ---------------------------------------------------------------------------
-Procedure.i IsPrivateHost(Host.s)
-  ; Refuse les adresses privees / loopback / link-local (comme la reference)
-  Host = LCase(Trim(Host))
-  If Host = "localhost" Or Host = "127.0.0.1" Or Host = "::1"
+Procedure.i LooksLikeIP(Tok.s)
+  Tok = Trim(Tok)
+  If Tok = "" : ProcedureReturn #False : EndIf
+  If FindString(Tok, ":") > 0 : ProcedureReturn #True : EndIf
+  If CountString(Tok, ".") = 3
+    Protected i.i, j.i, Part.s, c.i
+    For i = 1 To 4
+      Part = StringField(Tok, i, ".")
+      If Part = "" : ProcedureReturn #False : EndIf
+      For j = 1 To Len(Part)
+        c = Asc(Mid(Part, j, 1))
+        If c < 48 Or c > 57 : ProcedureReturn #False : EndIf
+      Next
+      If Val(Part) > 255 : ProcedureReturn #False : EndIf
+    Next
     ProcedureReturn #True
   EndIf
-  ; Plages IPv4 privees courantes
-  Protected Part1.i
-  If FindString(Host, ".") > 0
-    Part1 = Val(StringField(Host, 1, "."))
-    If Part1 = 10 : ProcedureReturn #True : EndIf
-    If Part1 = 172
-      Protected Part2.i = Val(StringField(Host, 2, "."))
-      If Part2 >= 16 And Part2 <= 31 : ProcedureReturn #True : EndIf
-    EndIf
-    If Part1 = 192
-      Protected P2.i = Val(StringField(Host, 2, "."))
-      If P2 = 168 : ProcedureReturn #True : EndIf
-    EndIf
-    If Part1 = 169
-      Protected P2b.i = Val(StringField(Host, 2, "."))
-      If P2b = 254 : ProcedureReturn #True : EndIf   ; link-local / metadata
-    EndIf
-  EndIf
   ProcedureReturn #False
+EndProcedure
+
+Procedure.i IsPrivateIPv4(IP.s)
+  If CountString(IP, ".") <> 3 : ProcedureReturn #True : EndIf
+  Protected P1.s = StringField(IP, 1, ".")
+  Protected P2.s = StringField(IP, 2, ".")
+  Protected P3.s = StringField(IP, 3, ".")
+  Protected P4.s = StringField(IP, 4, ".")
+  ; Refuser les zeros de tete (ambiguite octale : 0177.0.0.1).
+  If (Len(P1) > 1 And Left(P1, 1) = "0") Or (Len(P2) > 1 And Left(P2, 1) = "0") Or (Len(P3) > 1 And Left(P3, 1) = "0") Or (Len(P4) > 1 And Left(P4, 1) = "0")
+    ProcedureReturn #True
+  EndIf
+  Protected A.i = Val(P1)
+  Protected B.i = Val(P2)
+  Protected C.i = Val(P3)
+  If A = 0 Or A = 10 Or A = 127 : ProcedureReturn #True : EndIf
+  If A = 172 And B >= 16 And B <= 31 : ProcedureReturn #True : EndIf
+  If A = 192 And B = 168 : ProcedureReturn #True : EndIf
+  If A = 169 And B = 254 : ProcedureReturn #True : EndIf
+  If A = 100 And B >= 64 And B <= 127 : ProcedureReturn #True : EndIf
+  If A = 192 And B = 0 And (C = 0 Or C = 2) : ProcedureReturn #True : EndIf
+  If A = 198 And (B = 18 Or B = 19) : ProcedureReturn #True : EndIf
+  If A = 198 And B = 51 And C = 100 : ProcedureReturn #True : EndIf
+  If A = 203 And B = 0 And C = 113 : ProcedureReturn #True : EndIf
+  If A >= 224 : ProcedureReturn #True : EndIf
+  ProcedureReturn #False
+EndProcedure
+
+Procedure.i IsPrivateIPv6(IP.s)
+  IP = LCase(Trim(IP))
+  If IP = "::" Or IP = "::1" : ProcedureReturn #True : EndIf
+  If Left(IP, 2) = "fc" Or Left(IP, 2) = "fd" : ProcedureReturn #True : EndIf
+  If Left(IP, 3) = "fe8" Or Left(IP, 3) = "fe9" Or Left(IP, 3) = "fea" Or Left(IP, 3) = "feb"
+    ProcedureReturn #True
+  EndIf
+  If Left(IP, 2) = "ff" : ProcedureReturn #True : EndIf
+  If Left(IP, 7) = "2001:db" : ProcedureReturn #True : EndIf
+  If Left(IP, 7) = "64:ff9b" : ProcedureReturn #True : EndIf
+  If Left(IP, 7) = "::ffff:" : ProcedureReturn #True : EndIf
+  ProcedureReturn #False
+EndProcedure
+
+Procedure.i IsPrivateIP(IP.s)
+  If FindString(IP, ":") > 0 : ProcedureReturn IsPrivateIPv6(IP) : EndIf
+  ProcedureReturn IsPrivateIPv4(IP)
+EndProcedure
+
+Procedure.i IsIPLiteral(Host.s)
+  If FindString(Host, ":") > 0 : ProcedureReturn #True : EndIf
+  ProcedureReturn LooksLikeIP(Host)
+EndProcedure
+
+Procedure.i IsPrivateHost(Host.s)
+  Host = LCase(Trim(Host))
+  If Host = "localhost" : ProcedureReturn #True : EndIf
+  If IsIPLiteral(Host) : ProcedureReturn IsPrivateIP(Host) : EndIf
+  ProcedureReturn #False
+EndProcedure
+
+Procedure.s RunCapture(Program.s, CmdArgs.s)
+  Protected Prog.i = RunProgram(Program, CmdArgs, "", #PB_Program_Open | #PB_Program_Read | #PB_Program_Hide)
+  If Prog = 0 : ProcedureReturn "" : EndIf
+  Protected Out.s = ""
+  Protected Deadline.i = ElapsedMilliseconds() + 5000
+  While (ProgramRunning(Prog) Or AvailableProgramOutput(Prog)) And ElapsedMilliseconds() < Deadline
+    If AvailableProgramOutput(Prog)
+      Out + ReadProgramString(Prog, #PB_UTF8) + #LF$
+    Else
+      Delay(5)
+    EndIf
+  Wend
+  If ProgramRunning(Prog) : KillProgram(Prog) : EndIf
+  CloseProgram(Prog)
+  ProcedureReturn Out
+EndProcedure
+
+; Resout le hostname et collecte les IP. Retourne #False si aucune IP.
+Procedure.i ResolveHost(Host.s, List IPs.s())
+  If IsIPLiteral(Host)
+    AddElement(IPs())
+    IPs() = Host
+    ProcedureReturn #True
+  EndIf
+
+  Protected Out.s = "", Line.s, Tok.s, i.i, j.i
+  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
+    Out = RunCapture("nslookup", Host)
+    ; Parser independant de la langue : ignorer l'en-tete (serveur DNS)
+    ; et ne collecter les IP qu'a partir de la ligne contenant le hostname.
+    Protected SeenHost.i = #False
+    Protected LCount.i = CountString(Out, #LF$) + 1
+    For i = 1 To LCount
+      Line = ReplaceString(StringField(Out, i, #LF$), #CR$, "")
+      If FindString(LCase(Line), LCase(Host)) > 0 : SeenHost = #True : EndIf
+      If SeenHost
+        For j = 1 To CountString(Line, " ") + 1
+          Tok = Trim(StringField(Line, j, " "))
+          If LooksLikeIP(Tok) : AddElement(IPs()) : IPs() = Tok : EndIf
+        Next
+      EndIf
+    Next
+  CompilerElse
+    CompilerIf #PB_Compiler_OS = #PB_OS_Linux
+      Out = RunCapture("getent", "hosts " + Host)
+      Protected LCount2.i = CountString(Out, #LF$) + 1
+      For i = 1 To LCount2
+        Line = ReplaceString(StringField(Out, i, #LF$), #TAB$, " ")
+        Line = Trim(ReplaceString(Line, #CR$, ""))
+        Tok = Trim(StringField(Line, 1, " "))
+        If LooksLikeIP(Tok) : AddElement(IPs()) : IPs() = Tok : EndIf
+      Next
+    CompilerElse
+      Out = RunCapture("dscacheutil", "-q host -a name " + Host)
+      Protected LCount3.i = CountString(Out, #LF$) + 1
+      For i = 1 To LCount3
+        Line = ReplaceString(StringField(Out, i, #LF$), #CR$, "")
+        If FindString(LCase(Line), "ip_address:") > 0
+          Tok = Trim(Mid(Line, FindString(Line, ":") + 1))
+          If LooksLikeIP(Tok) : AddElement(IPs()) : IPs() = Tok : EndIf
+        EndIf
+      Next
+    CompilerEndIf
+  CompilerEndIf
+
+  ProcedureReturn Bool(ListSize(IPs()) > 0)
+EndProcedure
+
+Procedure.i HostResolvesToPrivate(Host.s)
+  NewList IPs.s()
+  ; Fail closed : si la resolution echoue, on refuse.
+  If Not ResolveHost(Host, IPs()) : ProcedureReturn #True : EndIf
+  If ListSize(IPs()) = 0 : ProcedureReturn #True : EndIf
+  ForEach IPs()
+    If IsPrivateIP(IPs()) : ProcedureReturn #True : EndIf
+  Next
+  ProcedureReturn #False
+EndProcedure
+
+Procedure.i IsValidHost(Host.s)
+  If Host = "" Or Len(Host) > 253 : ProcedureReturn #False : EndIf
+  Protected i.i, c.i
+  For i = 1 To Len(Host)
+    c = Asc(Mid(Host, i, 1))
+    If Not ((c >= 48 And c <= 57) Or (c >= 65 And c <= 90) Or (c >= 97 And c <= 122) Or c = 45 Or c = 46 Or c = 58)
+      ProcedureReturn #False
+    EndIf
+  Next
+  ProcedureReturn #True
 EndProcedure
 
 Procedure.s ValidateFetchUrl(Url.s)
@@ -55,8 +199,17 @@ Procedure.s ValidateFetchUrl(Url.s)
     ProcedureReturn ""
   EndIf
   Protected Host.s = GetURLPart(Url, #PB_URL_Site)
-  If Host = "" Or IsPrivateHost(Host)
+  If Left(Host, 1) = "[" And Right(Host, 1) = "]"
+    Host = Mid(Host, 2, Len(Host) - 2)
+  EndIf
+  If Host = "" Or Not IsValidHost(Host) Or IsPrivateHost(Host)
     ProcedureReturn ""
+  EndIf
+  ; Pour un hostname, resoudre et refuser toute IP privee (anti-SSRF).
+  If Not IsIPLiteral(Host)
+    If HostResolvesToPrivate(Host)
+      ProcedureReturn ""
+    EndIf
   EndIf
   ProcedureReturn Url
 EndProcedure
@@ -65,28 +218,8 @@ EndProcedure
 ; Recuperation HTTP en memoire
 ; ---------------------------------------------------------------------------
 Procedure.s HttpGetMemory(Url.s, *OutStatus.Integer)
-  Protected Req.i = HTTPRequestMemory(#PB_HTTP_Get, Url)
-  If Not Req
-    *OutStatus\i = -1
-    ProcedureReturn ""
-  EndIf
-
-  Protected Status.i = Val(HTTPInfo(Req, #PB_HTTP_StatusCode))
-  *OutStatus\i = Status
-
-  Protected Result.s = ""
-  If Status >= 200 And Status < 300
-    Protected *Buf = HTTPMemory(Req)
-    If *Buf
-      Protected Size.i = MemorySize(*Buf)
-      If Size > 0
-        Result = PeekS(*Buf, Size, #PB_UTF8 | #PB_ByteLength)
-      EndIf
-    EndIf
-  EndIf
-
-  FinishHTTP(Req)
-  ProcedureReturn Result
+  ; Plafond de 2 Mio : evite qu'un serveur distant epuise la memoire.
+  ProcedureReturn HttpGetLimited(Url, "", 15, #FETCH_MAX_BYTES, *OutStatus)
 EndProcedure
 
 ; ---------------------------------------------------------------------------
@@ -216,6 +349,9 @@ Procedure.s ToolFetch(ArgsObj.i)
 
   Protected Status.i
   Protected Html.s = HttpGetMemory(SafeUrl, @Status)
+  If Status = -3
+    ProcedureReturn "ERREUR: reponse trop volumineuse (max " + Str(#FETCH_MAX_BYTES / 1024 / 1024) + " Mo)."
+  EndIf
   If Status < 200 Or Status >= 300
     ProcedureReturn "ERREUR: echec HTTP (statut " + Str(Status) + ") pour " + SafeUrl
   EndIf

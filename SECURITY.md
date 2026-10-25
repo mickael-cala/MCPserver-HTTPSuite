@@ -16,13 +16,13 @@ couche HTTP commune :
 
 | Serveur | Surface | Protections |
 |---|---|---|
-| `fileMCP` | Système de fichiers | Confinement à `MCP_ROOT`, normalisation des chemins (traversées `..` refusées), `change_root` protégé par `MCP_ROOT_SECRET` |
+| `fileMCP` | Système de fichiers | Confinement à `MCP_ROOT`, normalisation des chemins (traversées `..` refusées), **symlinks/junctions sous la racine refusés**, `change_root` protégé par `MCP_ROOT_SECRET` |
 | `memoryMCP` | Base SQLite | Échappement SQL (apostrophes doublées), FK en cascade, base locale (`MCP_MEMORY_DB`) |
 | `dbMCP` | Bases SQL | **Lecture seule par défaut** (`IsReadOnlyQuery`), écritures uniquement avec `MCP_DB_ALLOW_WRITE=1`, refus journalisés |
 | `context7MCP` | API web | HTTP/HTTPS uniquement, clé API jamais loggée (WinHTTP/curl) |
 | `gitMCP` | Sous-processus git | `GitSafeParam` rejette les métacaractères shell sur tous les paramètres |
 | `githubMCP` | API GitHub | Écritures exigeant `confirm=true`, token jamais renvoyé ni loggé, pagination bornée, validation des segments d'URL |
-| `MCP-Fetch-PB` | API web | HTTP/HTTPS uniquement, hôtes privés/loopback refusés (anti-SSRF) |
+| `MCP-Fetch-PB` | API web | HTTP/HTTPS uniquement, IP privées/loopback/ULA/link-local refusées, **résolution DNS vérifiée** (anti-SSRF), **réponse plafonnée à 2 Mo** |
 | `MCP-SequentialThinking-PB` | État local | Aucune I/O externe |
 
 ## Surface réseau HTTP
@@ -89,7 +89,8 @@ Règles générales :
 ## Sécurité du code
 
 Voir [CONTRIBUTING.md](CONTRIBUTING.md). Les cas de sécurité sont couverts par
-les tests : traversées de chemins (fileMCP), injection SQL (memory/db),
-injection shell (git), garde `confirm` et gestion d'erreurs (github),
-anti-SSRF (fetch), refus d'écriture SQL (db), `Origin`/jeton/taille de corps
-et SSE optionnel sécurisé (transport HTTP).
+les tests : traversées de chemins et symlinks/junctions (fileMCP), injection
+SQL (memory/db), injection shell (git), garde `confirm` et gestion d'erreurs
+(github), anti-SSRF avec résolution DNS et plafond de réponse (fetch), refus
+d'écriture SQL (db), `Origin`/jeton/taille de corps et SSE optionnel sécurisé
+(transport HTTP).

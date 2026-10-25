@@ -2,7 +2,7 @@
 
 Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [versionnage sémantique](https://semver.org/lang/fr/).
 
-## [2.0.0] - 2026-10-24
+## [2.0.0] - 2026-10-25
 
 ### Modifié (rupture : transport HTTP JSON + SSE optionnel)
 - **Transport** : les 8 serveurs passent de JSON-RPC sur stdin/stdout à
@@ -15,6 +15,10 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
   **HTTP 400** ; une requête valide avec méthode inconnue reste HTTP 200.
   Sans en-tête `MCP-Protocol-Version`, la requête est traitée comme
   `2025-03-26` (fallback de la spec).
+- **Durcissement sécurité (Phase 8)** : `fileMCP` refuse les symlinks et
+  junctions sous `MCP_ROOT` ; `MCP-Fetch-PB` résout le DNS et refuse les IP
+  privées/loopback/ULA/link-local, avec un plafond de réponse de 2 Mo ;
+  `search_files` est borné (profondeur 32, 10 000 entrées, timeout 10 s).
 - **Nouveau `mcp_common/runtime.pbi`** : remplace `stdio.pbi` ; écriture
   stderr multi-OS et `CheckRuntime()`. Le code stdin/stdout est supprimé.
 - **Nouveau `mcp_common/http_server.pbi`** : serveur HTTP/1.1 natif
@@ -35,7 +39,7 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
   du bug de syntaxe de `run_all.sh` (lignes HTML orphelines).
 - **Tests** : `tests/mcp_client.py` réécrit en client HTTP (`GET /health`,
   `POST /mcp`, SSE optionnel) ; 21 tests de transport ajoutés
-  (**121 tests d'intégration**) ; robustesse adaptée au HTTP
+  (**124 tests d'intégration**) ; robustesse adaptée au HTTP
   (**21 vérifications**) ; `test_common.pb` couvre le noyau JSON-RPC
   (**199 tests unitaires** au total).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, ERRATA, CONTRIBUTING,
@@ -44,7 +48,7 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
   `examples/qwen-settings.json` (clé `httpUrl`, Streamable HTTP).
 - **Validation** : compilation et suite complète vertes sous **Windows** et
   **Linux (WSL2 Ubuntu 26.04)** (10/10, 199 unitaires, 21 robustesse/perf,
-  121 intégration). Validation macOS de la version 2.0.0 à faire.
+  124 intégration). Validation macOS de la version 2.0.0 à faire.
 
 ### Corrigé (validation Linux/WSL2, 1.0.x)
 - **`build.sh` / `run_all.sh`** utilisaient les options Windows (`/EXE`,

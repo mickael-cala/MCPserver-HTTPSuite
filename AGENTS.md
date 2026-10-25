@@ -22,7 +22,7 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
    ```
    Attendu : **10/10 étapes**, **199 tests unitaires**
    (46+33+37+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
-   et **121/121 tests d'intégration**. Si ce n'est pas le cas, corriger avant
+   et **124/124 tests d'intégration**. Si ce n'est pas le cas, corriger avant
    toute nouvelle fonctionnalité.
 4. **Choisir la suite** : voir [ROADMAP.md](ROADMAP.md). Ne jamais démarrer
    une phase sans avoir vert `run_all`.
@@ -37,8 +37,8 @@ export PBCOMPILER=$HOME/purebasic-demo/purebasic_demo/compilers/pbcompiler
 export PUREBASIC_HOME=$HOME/purebasic-demo/purebasic_demo
 ./build.sh && ./run_all.sh
 ```
-Attendu : 10/10 étapes (199 unitaires, 21 robustesse/perf, 121 intégration).
-Validé sous WSL2 Ubuntu 26.04 le 2026-10-24 : 10/10, 199, 21, 121.
+Attendu : 10/10 étapes (199 unitaires, 21 robustesse/perf, 124 intégration).
+Validé sous WSL2 Ubuntu 26.04 le 2026-10-25 : 10/10, 199, 21, 124.
 Attention : `build/` est partagé avec Windows si le dépôt est sur `/mnt/c` —
 relancer `build.bat` après une validation Linux.
 
@@ -152,7 +152,7 @@ stop_all.bat           # Windows : arrête les 8 serveurs
 ./stop_all.sh          # Linux/macOS : idem
 run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + intégration + report.html
 ./run_all.sh           # idem sous Linux/macOS
-python tests/test_mcp.py [serveur]   # intégration seule (121 tests)
+python tests/test_mcp.py [serveur]   # intégration seule (124 tests)
 ./clean.sh             # nettoie build/
 ```
 
@@ -255,6 +255,21 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
   source.** Garder chaque `.pbi` sous cette limite ; c'est pourquoi le serveur
   HTTP est scindé en `http_server.pbi` (noyau) et `http_sse.pbi` (SSE
   optionnel). Un dépassement donne `Source too big for the Free version.`
+- **Attributs de fichiers** : `GetFileAttributes_` (Windows) et
+  `GetFileAttributes` (Linux/macOS). Tester les bits avec **`&`** (bitwise),
+  jamais `And` (logique) : `Attr & $400` (reparse Windows),
+  `Attr & #PB_FileSystem_Link` (symlink Unix). `GetFileAttributes_` retourne
+  `$FFFFFFFF` pour un chemin absent, pas `-1`.
+- **Confinement réel fileMCP** : `PathHasLinkInRoot` vérifie chaque composant
+  sous `MCP_ROOT` ; ne pas le retirer. `change_root` refuse une racine qui est
+  un lien/junction.
+- **Anti-SSRF fetch** : `IsPrivateHost` / `IsPrivateIP` / `ResolveHost`
+  (getent/nslookup/dscacheutil) ; échec de résolution = refus. Le plafond
+  `#FETCH_MAX_BYTES` (2 Mo) passe par `HttpGetLimited` et
+  `curl --max-filesize` / WinHTTP.
+- **Bornes de recherche** : `#MAX_SEARCH_DEPTH` (32),
+  `#MAX_SEARCH_ENTRIES` (10 000), `#SEARCH_TIMEOUT_MS` (10 s) ; ignorer les
+  liens pour éviter les cycles et les sorties de racine.
 - **RunProgram sous Linux** ne gère pas les guillemets dans les arguments :
   écrire un script temporaire (`git_core.pbi` le fait) ou passer par curl -K.
 - **Fins de ligne** : `.gitattributes` impose LF aux `.sh/.py/.pb/.pbi/.md`
@@ -299,7 +314,7 @@ stop_all.bat/.sh                  arret des serveurs
 run_all.bat/run_all.sh            compilation + tests unitaires + integration + rapport
 tests/mcp_client.py               harnais de test externe (client MCP HTTP)
 tests/mock_github.py              mock local de l'API GitHub
-tests/test_mcp.py                 tests d'integration + transport (121 tests)
+tests/test_mcp.py                 tests d'integration + transport (124 tests)
 tests/unit_test.pbi               framework de tests unitaires PureBasic
 tests/test_common.pb              tests unitaires mcp_common (46 tests)
 tests/test_memory.pb              tests unitaires Memory (33 tests)

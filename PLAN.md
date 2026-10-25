@@ -1,6 +1,6 @@
 # Suivi du plan de développement
 
-État des phases du plan (mise à jour : 2026-10-24).
+État des phases du plan (mise à jour : 2026-10-25).
 
 | Phase | Sujet | Statut | Livrables |
 |---|---|---|---|
@@ -12,13 +12,14 @@
 | **5** | GitHub | ✅ Terminée | `githubMCP` (10 outils, `confirm=true`, mock local), 40 tests unitaires, 25 tests d'intégration |
 | **6** | Consolidation et tests transverses | ✅ Terminée | `tests/test_robustness.py` (T6.1–T6.15), rapport HTML par serveur, `examples/mcp.json` |
 | **7** | Transport HTTP + SSE optionnel | ✅ Terminée | `mcp_common/http_server.pbi` + `http_sse.pbi`, `runtime.pbi`, `start_all`/`stop_all`, 8 serveurs HTTP, tests transport, v2.0.0 |
+| **8** | Durcissement sécurité | ✅ Terminée | Liens/junctions refusés, SSRF DNS résolu, fetch plafonné à 2 Mo, recherche bornée (profondeur/entrées/timeout) |
 
 ## Définition de « terminé » (état actuel)
 
 | Critère | État |
 |---|---|
 | Tests unitaires des modules et serveurs | ✅ 46 + 33 + 37 + 19 + 24 + 40 = **199** (Windows et Linux) |
-| Tests d'intégration (8 serveurs + transport) | ✅ **121/121** |
+| Tests d'intégration (8 serveurs + transport) | ✅ **124/124** |
 | `run_all.bat` / `run_all.sh` vert | ✅ **10/10 étapes** |
 | Robustesse / performances | ✅ **21/21** (T6.14 conditionnel à une clé Context7) |
 | Transport | ✅ HTTP JSON (`POST /mcp`) + SSE optionnel (`GET /mcp` avec `Accept`) |
@@ -26,8 +27,8 @@
 | Aucun secret loggé ni renvoyé | ✅ tokens/clés jamais inclus dans les réponses ; logs stderr |
 | Documentation README complète | ✅ (outils, transport, env, build, tests, config client) |
 | Release publiée | ⏳ v2.0.0 à publier |
-| Validation Windows | ✅ 2.0.0 (10/10, 199 unitaires, 21 robustesse/perf, 121 intégration) |
-| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 199, 21, 121) |
+| Validation Windows | ✅ 2.0.0 (10/10, 199 unitaires, 21 robustesse/perf, 124 intégration) |
+| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 199, 21, 124) |
 | Validation macOS | ⏳ à faire (prérequis : `curl`) |
 | Sécurité réseau | ✅ bind loopback, Origin, jeton optionnel, corps borné |
 
@@ -35,8 +36,8 @@
 
 | Serveur | Port | Outils | Tests unitaires | Tests d'intégration | Documentation |
 |---|---:|---:|---|---|---|
-| `fileMCP` | 8101 | 10 | — (intégration) | 17 | README, SECURITY |
-| `MCP-Fetch-PB` | 8102 | 1 | — (intégration) | 3 | README |
+| `fileMCP` | 8101 | 10 | — (intégration) | 19 | README, SECURITY |
+| `MCP-Fetch-PB` | 8102 | 1 | — (intégration) | 4 | README |
 | `MCP-SequentialThinking-PB` | 8103 | 1 | — (intégration) | 6 | README |
 | `memoryMCP` | 8104 | 9 | 33 | 18 | README, SECURITY, ERRATA |
 | `dbMCP` | 8105 | 5 | 37 | 12 | README, SECURITY, ERRATA |
@@ -44,7 +45,7 @@
 | `gitMCP` | 8107 | 7 | 24 | 12 | README, SECURITY, ERRATA |
 | `githubMCP` | 8108 | 10 | 40 | 25 | README, SECURITY, ERRATA |
 
-Total : **45 outils**, **199 tests unitaires**, **121 tests d'intégration**
+Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
 (dont 21 tests de transport HTTP), **21 vérifications de robustesse/perf**.
 
 ## Détail des phases
@@ -128,7 +129,19 @@ Total : **45 outils**, **199 tests unitaires**, **121 tests d'intégration**
 - **Scripts** : `start_all` / `stop_all` (Windows/Linux), correction du bug de
   syntaxe de `run_all.sh`.
 - **Tests** : `tests/mcp_client.py` réécrit en HTTP ; 21 tests de transport
-  ajoutés (121 au total) ; robustesse adaptée (21 vérifications) ;
+  ajoutés (124 au total) ; robustesse adaptée (21 vérifications) ;
   `test_common.pb` couvre le noyau JSON-RPC (46 tests).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, CHANGELOG, ERRATA,
   CONTRIBUTING, SECURITY et modèles GitHub alignés sur HTTP.
+
+### Phase 8 — Durcissement sécurité (terminée)
+- **fileMCP** : `IsLinkOrJunction` + `PathHasLinkInRoot` refusent les
+  symlinks/junctions sous `MCP_ROOT` (bit reparse Windows, `#PB_FileSystem_Link`
+  Linux/macOS) ; `change_root` refuse une racine qui est elle-même un lien.
+- **Recherche** : profondeur max 32, 10 000 entrées, timeout 10 s, liens
+  ignorés pour éviter les sorties de racine et les cycles.
+- **Fetch** : résolution DNS (`getent` Linux, `nslookup` Windows,
+  `dscacheutil` macOS) et rejet des IP privées/loopback/ULA/link-local ;
+  plafond de réponse à 2 Mo (`HttpGetLimited`, `curl --max-filesize` ou
+  WinHTTP). Échec fermé si la résolution DNS échoue.
+- **Tests** : 19 tests fileMCP, 4 tests Fetch, **124 tests d'intégration**.
