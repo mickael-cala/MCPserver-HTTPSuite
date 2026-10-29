@@ -1,0 +1,22 @@
+--- a/build.bat
++++ b/build.bat
+@@ -23,7 +23,7 @@
+
+ if not exist build mkdir build
+
+-for %%S in (fileMCP MCP-Fetch-PB MCP-SequentialThinking-PB memoryMCP dbMCP context7MCP gitMCP githubMCP) do (
++for %%S in (fileMCP fpcMCP MCP-Fetch-PB MCP-SequentialThinking-PB memoryMCP dbMCP context7MCP gitMCP githubMCP) do (
+     echo Compilation de src\%%S.pb ...
+     "%PBC%" "src\%%S.pb" /EXE "build\%%S.exe" /CONSOLE /UNICODE /THREAD
+     if errorlevel 1 (
+--- a/build.sh
++++ b/build.sh
+@@ -22,7 +22,7 @@
+
+ mkdir -p build
+
+-for SRC in fileMCP MCP-Fetch-PB MCP-SequentialThinking-PB memoryMCP dbMCP context7MCP gitMCP githubMCP; do
++for SRC in fileMCP fpcMCP MCP-Fetch-PB MCP-SequentialThinking-PB memoryMCP dbMCP context7MCP gitMCP githubMCP; do
+     echo "Compilation de src/$SRC.pb ..."
+     "$PBC" "src/$SRC.pb" -o "build/$SRC" -cl -t
+ done
