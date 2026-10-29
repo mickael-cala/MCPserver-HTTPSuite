@@ -21,6 +21,7 @@ IncludeFile "fs_guard.pbi"
 Global G_AllowedRoot.s
 Global G_RootSecret.s
 
+#FILE_MAX_READ_BYTES = 2 * 1024 * 1024
 #MAX_SEARCH_DEPTH   = 32
 #MAX_SEARCH_ENTRIES = 10000
 #SEARCH_TIMEOUT_MS  = 10000
@@ -135,22 +136,28 @@ Procedure.s ToolReadFile(Path.s)
   Protected BytesToRead.q = Size
   Protected Truncated.i = #False
 
-  If BytesToRead > 20000
-    BytesToRead = 20000
+  ; Borne unique : la meme constante sert a la lecture directe, la lecture
+  ; par lignes et la recherche. Ne pas laisser 20000 ici : le catalogue et le
+  ; comportement divergeraient silencieusement.
+  If BytesToRead > #FILE_MAX_READ_BYTES
+    BytesToRead = #FILE_MAX_READ_BYTES
     Truncated = #True
   EndIf
 
   Protected *Buffer = AllocateMemory(BytesToRead + 1)
   Protected Content.s = ""
   If *Buffer
-    ReadData(FileNum, *Buffer, BytesToRead)
-    Content = PeekS(*Buffer, BytesToRead, #PB_UTF8 | #PB_ByteLength)
+    ; Ne jamais decoder plus d'octets que ReadData n'en a reellement lus.
+    Protected ReadBytes.q = ReadData(FileNum, *Buffer, BytesToRead)
+    If ReadBytes < 0 : ReadBytes = 0 : EndIf
+    PokeB(*Buffer + ReadBytes, 0)
+    Content = PeekS(*Buffer, ReadBytes, #PB_UTF8 | #PB_ByteLength)
     FreeMemory(*Buffer)
   EndIf
   CloseFile(FileNum)
 
   If Truncated
-    Content + #LF$ + "[... Tronque au-dela de 20000 octets ...]"
+    Content + #LF$ + "[... Tronque au-dela de " + Str(#FILE_MAX_READ_BYTES) + " octets ...]"
   EndIf
   ProcedureReturn Content
 EndProcedure
@@ -159,7 +166,11 @@ Procedure.s ToolReadFileLines(Path.s, StartLine.i, MaxLines.i)
   Protected SafePath.s = ValiderChemin(Path)
   If SafePath = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
   If FileSize(SafePath) < 0 : ProcedureReturn "Fichier introuvable : " + Path : EndIf
-  If FileSize(SafePath) > 5 * 1024 * 1024 : ProcedureReturn "Fichier depasse la limite de 5 Mo." : EndIf
+  ; Lecture ligne par ligne != lecture moins couteuse : une ligne peut etre
+  ; enorme. La borne de fichier reste donc identique a read_file.
+  If FileSize(SafePath) > #FILE_MAX_READ_BYTES
+    ProcedureReturn "Fichier depasse la limite de 2 Mio."
+  EndIf
 
   Protected FileNum.i = ReadFile(#PB_Any, SafePath)
   If Not FileNum : ProcedureReturn "Impossible d'ouvrir le fichier : " + Path : EndIf
@@ -285,7 +296,7 @@ Procedure SearchRecursive(BaseDir.s, Pattern.s, List Matches.s(), *Count.Integer
           If DirectoryEntryType(Dir) = #PB_DirectoryEntry_Directory
             SearchRecursive(Full, Pattern, Matches(), *Count, Depth + 1, *Deadline, *Visited)
           Else
-            If Not IsBinaryFile(Full) And DirectoryEntrySize(Dir) <= 2 * 1024 * 1024
+            If Not IsBinaryFile(Full) And DirectoryEntrySize(Dir) <= #FILE_MAX_READ_BYTES
               Protected F.i = ReadFile(#PB_Any, Full)
               If F
                 Protected LineNum.i = 0
@@ -363,8 +374,8 @@ Procedure.i BuildToolsCatalog()
   SetJSONArray(ToolsArr)
 
   ToolDef(ToolsArr, "list_files", "Lister le contenu d'un repertoire (confine a la racine autorisee)", "path|string|Chemin du repertoire", "path")
-  ToolDef(ToolsArr, "read_file", "Lire un fichier texte (tronque au-dela de 20000 octets)", "path|string|Chemin du fichier", "path")
-  ToolDef(ToolsArr, "read_file_lines", "Lire une plage de lignes (fichier limite a 5 Mo)", "path|string|Chemin;startLine|integer|Ligne de depart (defaut:1);maxLines|integer|Nombre de lignes (defaut:50)", "path")
+  ToolDef(ToolsArr, "read_file", "Lire un fichier texte (tronque au-dela de 2 Mio)", "path|string|Chemin du fichier", "path")
+  ToolDef(ToolsArr, "read_file_lines", "Lire une plage de lignes (fichier limite a 2 Mio)", "path|string|Chemin;startLine|integer|Ligne de depart (defaut:1);maxLines|integer|Nombre de lignes (defaut:50)", "path")
   ToolDef(ToolsArr, "write_file", "Ecrire/creer un fichier texte", "path|string|Chemin;content|string|Contenu", "path;content")
   ToolDef(ToolsArr, "create_directory", "Creer un repertoire", "path|string|Chemin", "path")
   ToolDef(ToolsArr, "delete_file", "Supprimer un fichier ou dossier", "path|string|Chemin", "path")
