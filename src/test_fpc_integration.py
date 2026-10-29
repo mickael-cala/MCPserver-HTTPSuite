@@ -100,7 +100,7 @@ def main() -> int:
 
             tools = rpc(18108, "tools/list", {})["result"]["tools"]
             names = {tool["name"] for tool in tools}
-            check(names == {"fpc_targets", "fpc_version", "fpc_compile"}, "catalogue fpcMCP")
+            check(names == {"fpc_targets", "fpc_version", "fpc_compile", "fpc_clean"}, "catalogue fpcMCP")
 
             is_error, text = tool_text(18108, "fpc_targets", {})
             check(not is_error, "fpc_targets reussi")
@@ -126,6 +126,14 @@ def main() -> int:
             check("Sortie compilateur" in text, "section stdout presente", text)
             check("Erreurs compilateur" in text, "section stderr presente", text)
             check("Artefacts" in text, "section artefacts presente", text)
+
+            is_error, text = tool_text(18108, "fpc_clean", {"target": target})
+            check(not is_error, f"fpc_clean accepte la cible {target}")
+            check("Nettoyage termine" in text, "fpc_clean confirme le nettoyage", text)
+            check((root / "build" / target).is_dir(), "repertoire de build recree")
+
+            is_error, text = tool_text(18108, "fpc_clean", {"target": "amiga-mos"})
+            check(is_error, "fpc_clean refuse une cible inconnue")
         finally:
             process.terminate()
             try:

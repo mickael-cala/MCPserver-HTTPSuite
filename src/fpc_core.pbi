@@ -539,6 +539,38 @@ Procedure.s ToolFpcCompile(SourcePath.s, TargetId.s, BuildMode.s, OutputName.s)
   ProcedureReturn Res
 EndProcedure
 
+Procedure.s ToolFpcClean(TargetId.s)
+  Protected Index.i = FpcTargetIndex(TargetId)
+  If Index < 0
+    ProcedureReturn "Erreur : cible inconnue : " + TargetId
+  EndIf
+
+  ; Defense en profondeur : la racine a ete durcie au demarrage, mais un
+  ; nettoyage recursif merite une derniere verification avant suppression.
+  If G_FpcRoot = "" Or FileSize(G_FpcRoot) <> -2
+    ProcedureReturn "Erreur : racine FPC invalide, nettoyage refuse."
+  EndIf
+
+  ; Chemin reconstruit par la meme formule que FpcPrepareBuildDirs : il ne
+  ; contient aucune entree utilisateur et reste donc sous la racine.
+  Protected Sep.s = FSSeparator()
+  Protected Base.s = FSEnsureTrailingSlash(G_FpcRoot) + "build" + Sep + FpcTargets(Index)\Id
+
+  If FileSize(Base) = -2
+    If Not DeleteDirectory(Base, "", #PB_FileSystem_Recursive)
+      ProcedureReturn "Erreur : impossible de supprimer " + Base
+    EndIf
+  EndIf
+
+  ; Recreer la structure attendue : une compilation suivante ne doit pas
+  ; echouer juste parce que le dossier a ete nettoye.
+  If Not FpcPrepareBuildDirs(Index)
+    ProcedureReturn "Erreur : impossible de recreer les repertoires de " + FpcTargets(Index)\Id
+  EndIf
+
+  ProcedureReturn "Nettoyage termine pour " + FpcTargets(Index)\Id + " : " + G_FpcExeDir
+EndProcedure
+
 Procedure.i FpcBuildCatalog()
   Protected RootJSON.i = CreateJSON(#PB_Any)
   Protected RootVal.i = SetJSONObject(JSONValue(RootJSON))
@@ -548,6 +580,7 @@ Procedure.i FpcBuildCatalog()
   ToolDef(ToolsArr, "fpc_targets", "Liste les six cibles Free Pascal et la resolution du compilateur", "", "")
   ToolDef(ToolsArr, "fpc_version", "Version du compilateur Free Pascal resolu", "target|string|Cible optionnelle (ex. linux64)", "")
   ToolDef(ToolsArr, "fpc_compile", "Compile un source Pascal confine dans MCP_FPC_ROOT", "sourcePath|string|Chemin du source;target|string|Cible (win32, win64, linux32, linux64, linux-aarch64, macos-aarch64);buildMode|string|debug ou release (defaut: debug);outputName|string|Nom de sortie simple (optionnel)", "sourcePath;target")
+  ToolDef(ToolsArr, "fpc_clean", "Vide les artefacts d'une cible pour forcer une compilation propre", "target|string|Cible (win32, win64, linux32, linux64, linux-aarch64, macos-aarch64)", "target")
 
   ProcedureReturn RootJSON
 EndProcedure
@@ -564,6 +597,8 @@ Procedure.s FpcDispatch(ToolName.s, ArgsObj.i, *IsError.Integer)
                               GetArgString(ArgsObj, "target"),
                               GetArgString(ArgsObj, "buildMode"),
                               GetArgString(ArgsObj, "outputName"))
+    Case "fpc_clean"
+      Result = ToolFpcClean(GetArgString(ArgsObj, "target"))
     Default
       *IsError\i = #True
       ProcedureReturn "Outil inconnu : " + ToolName
