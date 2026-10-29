@@ -16,6 +16,7 @@ IncludeFile "../mcp_common/json_helpers.pbi"
 IncludeFile "../mcp_common/protocol.pbi"
 IncludeFile "../mcp_common/jsonrpc.pbi"
 IncludeFile "../mcp_common/http_server.pbi"
+IncludeFile "fs_guard.pbi"
 
 Global G_AllowedRoot.s
 Global G_RootSecret.s
@@ -28,112 +29,26 @@ Global G_RootSecret.s
 ; Utilitaires de chemins (100 % natifs)
 ; ---------------------------------------------------------------------------
 
+; Desormais de simples wrappers : la logique de confinement vit dans
+; fs_guard.pbi pour etre partagee entre fileMCP et fpcMCP sans copie.
 Procedure.s GetPathSeparator()
-  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
-    ProcedureReturn "\"
-  CompilerElse
-    ProcedureReturn "/"
-  CompilerEndIf
+  ProcedureReturn FSSeparator()
 EndProcedure
 
 Procedure.s EnsureTrailingSlash(Path.s)
-  Protected Sep.s = GetPathSeparator()
-  If Right(Path, 1) <> "/" And Right(Path, 1) <> "\"
-    ProcedureReturn Path + Sep
-  EndIf
-  ProcedureReturn Path
+  ProcedureReturn FSEnsureTrailingSlash(Path)
 EndProcedure
 
 Procedure.s NormalizePath(Path.s)
-  Protected Sep.s = GetPathSeparator()
-  Path = ReplaceString(ReplaceString(Path, "/", Sep), "\", Sep)
-
-  Protected Prefix.s = ""
-  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
-    If Mid(Path, 2, 1) = ":"
-      Prefix = Left(Path, 2)
-      Path = Mid(Path, 3)
-    EndIf
-  CompilerElse
-    If Left(Path, 1) = "/"
-      Prefix = "/"
-      Path = Mid(Path, 2)
-    EndIf
-  CompilerEndIf
-
-  NewList Segments.s()
-  Protected i.i, Count.i = CountString(Path, Sep) + 1
-  Protected Part.s
-
-  For i = 1 To Count
-    Part = Trim(StringField(Path, i, Sep))
-    If Part = "" Or Part = "."
-      ; Ignorer les separateurs redondants et les segments neutres
-    ElseIf Part = ".."
-      ; Remonter d'un cran si possible
-      If ListSize(Segments()) > 0
-        LastElement(Segments())
-        DeleteElement(Segments())
-      EndIf
-    Else
-      AddElement(Segments())
-      Segments() = Part
-    EndIf
-  Next
-
-  Protected Result.s = Prefix
-  ForEach Segments()
-    If Result = "" Or Result = "/"
-      Result + Segments()
-    ElseIf Right(Result, 1) = ":"
-      Result + Sep + Segments()
-    Else
-      Result + Sep + Segments()
-    EndIf
-  Next
-
-  If Result = "" And Prefix <> ""
-    Result = Prefix
-  EndIf
-
-  ProcedureReturn Result
+  ProcedureReturn FSNormalizePath(Path)
 EndProcedure
 
-; ---------------------------------------------------------------------------
-; Detection des liens symboliques / junctions (confinement reel)
-; ---------------------------------------------------------------------------
 Procedure.i IsLinkOrJunction(Path.s)
-  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
-    ; GetFileAttributesW ne suit pas le lien : le bit reparse est present.
-    Protected Attr.i = GetFileAttributes_(Path)
-    If Attr = -1 Or Attr = $FFFFFFFF : ProcedureReturn #False : EndIf
-    ProcedureReturn Bool((Attr & $400) <> 0)   ; FILE_ATTRIBUTE_REPARSE_POINT
-  CompilerElse
-    Protected Attr.i = GetFileAttributes(Path)
-    If Attr = -1 : ProcedureReturn #False : EndIf
-    ProcedureReturn Bool((Attr & #PB_FileSystem_Link) <> 0)
-  CompilerEndIf
+  ProcedureReturn FSIsLinkOrJunction(Path)
 EndProcedure
 
-; Verifie chaque composant sous FullRoot (racine incluse non verifiee).
 Procedure.i PathHasLinkInRoot(FullPath.s, FullRoot.s)
-  If Len(FullPath) <= Len(FullRoot) : ProcedureReturn #False : EndIf
-  Protected Rel.s = Mid(FullPath, Len(FullRoot) + 1)
-  Protected Sep.s = GetPathSeparator()
-  Protected Count.i = CountString(Rel, Sep) + 1
-  Protected Prefix.s = FullRoot
-  Protected i.i, Part.s
-
-  For i = 1 To Count
-    Part = StringField(Rel, i, Sep)
-    If Part <> ""
-      Prefix = EnsureTrailingSlash(Prefix) + Part
-      ; Verifier le lien avant FileSize (un lien casse a FileSize = -1).
-      If IsLinkOrJunction(Prefix) : ProcedureReturn #True : EndIf
-      If FileSize(Prefix) = -1 : Break : EndIf
-    EndIf
-  Next
-  ProcedureReturn #False
+  ProcedureReturn FSPathHasLinkInRoot(FullPath, FullRoot)
 EndProcedure
 
 Procedure.i NativeCreateDirectories(Path.s)
@@ -166,51 +81,9 @@ Procedure.i NativeCreateDirectories(Path.s)
 EndProcedure
 
 Procedure.s ValiderChemin(CheminDemande.s)
-  CheminDemande = Trim(CheminDemande)
-  If CheminDemande = ""
-    ProcedureReturn ""
-  EndIf
-
-  Protected IsAbsolute.i = #False
-  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
-    If Mid(CheminDemande, 2, 1) = ":" Or Left(CheminDemande, 1) = "\" Or Left(CheminDemande, 1) = "/"
-      IsAbsolute = #True
-    EndIf
-  CompilerElse
-    If Left(CheminDemande, 1) = "/"
-      IsAbsolute = #True
-    EndIf
-  CompilerEndIf
-
-  Protected FullPath.s
-  If Not IsAbsolute
-    FullPath = NormalizePath(EnsureTrailingSlash(G_AllowedRoot) + CheminDemande)
-  Else
-    FullPath = NormalizePath(CheminDemande)
-  EndIf
-
-  Protected FullRoot.s = EnsureTrailingSlash(NormalizePath(G_AllowedRoot))
-  Protected NormPath.s, NormRoot.s
-
-  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
-    NormPath = UCase(EnsureTrailingSlash(FullPath))
-    NormRoot = UCase(FullRoot)
-  CompilerElse
-    NormPath = EnsureTrailingSlash(FullPath)
-    NormRoot = FullRoot
-  CompilerEndIf
-
-  ; Confinement sous la racine autorisee
-  If Left(NormPath, Len(NormRoot)) <> NormRoot
-    ProcedureReturn ""
-  EndIf
-
-  ; Interdire les liens/junctions a l'interieur de la racine (evasion).
-  If PathHasLinkInRoot(FullPath, FullRoot)
-    ProcedureReturn ""
-  EndIf
-
-  ProcedureReturn FullPath
+  ; La racine autorisee G_AllowedRoot est fixee et durcie au demarrage par
+  ; FSPrepareRoot : le gardien peut s'y appuyer pour chaque demande.
+  ProcedureReturn FSValidatePath(CheminDemande, G_AllowedRoot)
 EndProcedure
 
 Procedure.i IsBinaryFile(Filename.s)
@@ -542,11 +415,14 @@ G_ServerVersion = "2.0.0"
 *G_ToolHandler = @ToolDispatch()
 *G_CatalogBuilder = @BuildToolsCatalog()
 
-G_AllowedRoot = GetEnvironmentVariable("MCP_ROOT")
+; La racine vient de l'environnement, mais elle doit etre absolue et reelle :
+; un lien ici contournerait toute la validation effectuee sous cette racine.
+G_AllowedRoot = FSPrepareRoot(GetEnvironmentVariable("MCP_ROOT"))
 If G_AllowedRoot = ""
-  G_AllowedRoot = GetCurrentDirectory()
+  LogError("MCP_ROOT invalide : repertoire introuvable ou lien symbolique/junction.")
+  End 1
 EndIf
-G_AllowedRoot = NormalizePath(G_AllowedRoot)
+LogDebug("Racine autorisee : " + G_AllowedRoot)
 
 G_RootSecret = GetEnvironmentVariable("MCP_ROOT_SECRET")
 
