@@ -227,3 +227,350 @@ Procedure.i FpcPrepareBuildDirs(TargetIndex.i)
   G_FpcUnitDir = UnitPath
   ProcedureReturn #True
 EndProcedure
+
+; ---------------------------------------------------------------------------
+; Runner borne : execution directe, sans shell
+; ---------------------------------------------------------------------------
+
+; Ajoute Addition au flux StdOut (ToErr = #False) ou StdErr (ToErr = #True)
+; du resultat, en bornant la longueur totale a #FPC_STREAM_LIMIT octets
+; (mesure en caracteres, borne conservative car un caractere UTF-8 fait au
+; plus 4 octets cote reseau... ici on reste sur une borne simple et sure).
+; PARANO PB : on ecrit dans un CHAMP de structure (*R\StdOut) via pointeur,
+; operation verifiee fiable ; ecrire @VariableString\s serait perdu ou plante.
+Procedure FpcAppendLimited(*R.FpcResult, Addition.s, ToErr.i)
+  Protected Current.s
+  If ToErr
+    Current = *R\StdErr
+  Else
+    Current = *R\StdOut
+  EndIf
+
+  If Len(Current) >= #FPC_STREAM_LIMIT
+    If Not FindString(Current, "[... tronque ...]")
+      Current + "[... tronque ...]"
+    EndIf
+  Else
+    Protected Room.i = #FPC_STREAM_LIMIT - Len(Current)
+    If Len(Addition) > Room
+      Addition = Left(Addition, Room)
+    EndIf
+    Current + Addition
+    ; Marqueur unique, ajoute une seule fois, des la borne atteinte.
+    If Len(Current) >= #FPC_STREAM_LIMIT And Not FindString(Current, "[... tronque ...]")
+      Current + "[... tronque ...]"
+    EndIf
+  EndIf
+
+  If ToErr
+    *R\StdErr = Current
+  Else
+    *R\StdOut = Current
+  EndIf
+EndProcedure
+
+Procedure.i FpcRunProgram(Program.s, Parameters.s, WorkingDirectory.s, TimeoutMs.i, *R.FpcResult)
+  *R\ExitCode = -1
+  *R\TimedOut = #False
+  *R\DurationMs = 0
+  *R\StdOut = ""
+  *R\StdErr = ""
+
+  If Trim(Program) = ""
+    *R\StdErr = "Erreur : executable vide."
+    ProcedureReturn -1
+  EndIf
+  If WorkingDirectory <> "" And FileSize(WorkingDirectory) <> -2
+    *R\StdErr = "Erreur : repertoire de travail introuvable : " + WorkingDirectory
+    ProcedureReturn -1
+  EndIf
+  If TimeoutMs < 1000 : TimeoutMs = 1000 : EndIf
+
+  ; Aucun shell ici : RunProgram recoit un executable et une chaine d'arguments
+  ; fixes. Le but est de reduire l'interpreteur disponible pour l'attaquant.
+  Protected Prog.i = RunProgram(Program, Parameters, WorkingDirectory,
+                                #PB_Program_Open | #PB_Program_Read |
+                                #PB_Program_Error | #PB_Program_Hide)
+  If Prog = 0
+    *R\StdErr = "Erreur : impossible de lancer " + Program
+    ProcedureReturn -1
+  EndIf
+
+  Protected StartMs.i = ElapsedMilliseconds()
+  Protected Deadline.i = StartMs + TimeoutMs
+  Protected ErrLine.s
+
+  While ProgramRunning(Prog)
+    If AvailableProgramOutput(Prog)
+      FpcAppendLimited(*R, ReadProgramString(Prog, #PB_UTF8) + #LF$, #False)
+    EndIf
+
+    ; ReadProgramError est non bloquant : lire stderr empeche un processus
+    ; verbeux de mourir sur un pipe plein.
+    ErrLine = ReadProgramError(Prog, #PB_UTF8)
+    If ErrLine <> ""
+      FpcAppendLimited(*R, ErrLine + #LF$, #True)
+    EndIf
+
+    If ElapsedMilliseconds() > Deadline
+      *R\TimedOut = #True
+      KillProgram(Prog)
+      Break
+    EndIf
+    Delay(5)
+  Wend
+
+  While AvailableProgramOutput(Prog)
+    FpcAppendLimited(*R, ReadProgramString(Prog, #PB_UTF8) + #LF$, #False)
+  Wend
+  Repeat
+    ErrLine = ReadProgramError(Prog, #PB_UTF8)
+    If ErrLine <> ""
+      FpcAppendLimited(*R, ErrLine + #LF$, #True)
+    EndIf
+  Until ErrLine = ""
+
+  WaitProgram(Prog)
+  *R\ExitCode = ProgramExitCode(Prog)
+  *R\DurationMs = ElapsedMilliseconds() - StartMs
+  CloseProgram(Prog)
+
+  If *R\TimedOut
+    FpcAppendLimited(*R, "Erreur : compilation arretee apres timeout." + #LF$, #True)
+  EndIf
+
+  ProcedureReturn *R\ExitCode
+EndProcedure
+
+Procedure.s FpcListFilesLimited(Dir.s, Label.s)
+  Protected Res.s = Label + " :" + #LF$
+  Protected Count.i = 0
+  Protected D.i = ExamineDirectory(#PB_Any, Dir, "*")
+  If D
+    While NextDirectoryEntry(D)
+      Protected Name.s = DirectoryEntryName(D)
+      If Name <> "." And Name <> ".." And DirectoryEntryType(D) = #PB_DirectoryEntry_File
+        Count + 1
+        Res + "  " + Name + " (" + Str(DirectoryEntrySize(D)) + " octets)" + #LF$
+        If Count >= 20
+          Res + "  [... liste limitee a 20 fichiers ...]" + #LF$
+          Break
+        EndIf
+      EndIf
+    Wend
+    FinishDirectory(D)
+  EndIf
+  If Count = 0
+    Res + "  (aucun fichier)" + #LF$
+  EndIf
+  ProcedureReturn Res
+EndProcedure
+
+Procedure.s FpcResultText(TargetId.s, SourcePath.s, Compiler.s, *R.FpcResult, ExeDir.s, UnitDir.s)
+  Protected Res.s = "Statut    : "
+  If *R\TimedOut
+    Res + "Echec (timeout)" + #LF$
+  ElseIf *R\ExitCode = 0
+    Res + "Reussi" + #LF$
+  Else
+    Res + "Echec" + #LF$
+  EndIf
+
+  Res + "Cible     : " + TargetId + #LF$
+  Res + "Compilateur : " + Compiler + #LF$
+  Res + "Source    : " + SourcePath + #LF$
+  Res + "Code      : " + Str(*R\ExitCode) + #LF$
+  Res + "Duree     : " + Str(*R\DurationMs) + " ms" + #LF$ + #LF$
+
+  Res + "Sortie compilateur" + #LF$
+  Res + "------------------" + #LF$
+  If *R\StdOut = ""
+    Res + "(vide)" + #LF$
+  Else
+    Res + *R\StdOut
+  EndIf
+  Res + #LF$
+
+  Res + "Erreurs compilateur" + #LF$
+  Res + "-------------------" + #LF$
+  If *R\StdErr = ""
+    Res + "(vide)" + #LF$
+  Else
+    Res + *R\StdErr
+  EndIf
+  Res + #LF$
+
+  Res + "Artefacts" + #LF$
+  Res + "---------" + #LF$
+  Res + FpcListFilesLimited(ExeDir, "Executables")
+  Res + FpcListFilesLimited(UnitDir, "Unites")
+  ProcedureReturn Res
+EndProcedure
+
+Procedure.s ToolFpcTargets()
+  FpcInitTargets()
+  Protected Res.s = "Cibles Free Pascal :" + #LF$
+  Protected i.i, Origin.i
+  For i = 0 To #FPC_TARGET_COUNT - 1
+    Origin = 0
+    Protected Compiler.s = FpcResolveCompiler(i, @Origin)
+    Protected OriginText.s = "PATH"
+    If Origin = 1
+      OriginText = FpcTargets(i)\EnvName
+    ElseIf Origin = 2
+      OriginText = "MCP_FPC"
+    EndIf
+
+    Res + "- " + FpcTargets(i)\Id + " : CPU=" + FpcTargets(i)\Cpu +
+          ", OS=" + FpcTargets(i)\Os + ", args=" + FpcTargets(i)\Args +
+          ", compilateur=" + Compiler + " (" + OriginText + ")" + #LF$
+  Next
+  ProcedureReturn Res
+EndProcedure
+
+Procedure.s ToolFpcVersion(TargetId.s)
+  Protected Compiler.s = Trim(G_FpcCompilerDefault)
+  If Compiler = ""
+    Compiler = "fpc"
+  EndIf
+
+  If Trim(TargetId) <> ""
+    Protected Index.i = FpcTargetIndex(TargetId)
+    If Index < 0
+      ProcedureReturn "Erreur : cible inconnue : " + TargetId
+    EndIf
+    Protected Origin.i
+    Compiler = FpcResolveCompiler(Index, @Origin)
+  EndIf
+
+  Protected R.FpcResult
+  FpcRunProgram(Compiler, "-iV", "", 10000, @R)
+
+  Protected Res.s = "Compilateur : " + Compiler + #LF$
+  If Trim(TargetId) <> ""
+    Res + "Cible       : " + LCase(Trim(TargetId)) + #LF$
+  EndIf
+  Res + "Code        : " + Str(R\ExitCode) + #LF$
+  Res + "Version     :" + #LF$
+  If R\StdOut = ""
+    Res + "(aucune sortie)" + #LF$
+  Else
+    Res + R\StdOut
+  EndIf
+  If R\StdErr <> ""
+    Res + "Stderr      :" + #LF$ + R\StdErr
+  EndIf
+  ProcedureReturn Res
+EndProcedure
+
+Procedure.s ToolFpcCompile(SourcePath.s, TargetId.s, BuildMode.s, OutputName.s)
+  Protected Index.i = FpcTargetIndex(TargetId)
+  If Index < 0
+    ProcedureReturn "Erreur : cible inconnue : " + TargetId
+  EndIf
+
+  BuildMode = LCase(Trim(BuildMode))
+  If BuildMode = ""
+    BuildMode = "debug"
+  EndIf
+  If BuildMode <> "debug" And BuildMode <> "release"
+    ProcedureReturn "Erreur : buildMode doit etre debug ou release."
+  EndIf
+
+  OutputName = Trim(OutputName)
+  If Not FpcValidateOutputName(OutputName)
+    ProcedureReturn "Erreur : outputName invalide (nom simple : lettres, chiffres, point, tiret, underscore ; pas de chemin)."
+  EndIf
+
+  ; Interface sans pointeur sortie : "" = OK, chemin dans G_FpcSafeSource.
+  Protected Bad.s = FpcValidateSource(SourcePath)
+  If Bad <> ""
+    ProcedureReturn Bad
+  EndIf
+  Protected SafeSource.s = G_FpcSafeSource
+
+  ; Repertoires de sortie dans G_FpcExeDir / G_FpcUnitDir.
+  If Not FpcPrepareBuildDirs(Index)
+    ProcedureReturn "Erreur : impossible de creer les repertoires de sortie."
+  EndIf
+  Protected ExeDir.s = G_FpcExeDir
+  Protected UnitDir.s = G_FpcUnitDir
+
+  Protected Origin.i
+  Protected Compiler.s = FpcResolveCompiler(Index, @Origin)
+
+  ; Repertoire temporaire nomme de facon simple : l'argument passe a FPC est
+  ; seulement "@mcp_fpc.rsp", donc il ne contient ni espace ni chemin projet.
+  Protected TempDir.s = GetTemporaryDirectory() + "mcp_fpc_" + Str(Date()) + "_" + Str(Random(1000000))
+  CreateDirectory(TempDir)
+  If FileSize(TempDir) <> -2
+    ProcedureReturn "Erreur : impossible de creer le repertoire temporaire."
+  EndIf
+
+  Protected Response.s = TempDir + FSSeparator() + "mcp_fpc.rsp"
+  Protected F.i = CreateFile(#PB_Any, Response)
+  If F = 0
+    DeleteDirectory(TempDir, "", #PB_FileSystem_Recursive)
+    ProcedureReturn "Erreur : impossible de creer le fichier de reponse FPC."
+  EndIf
+
+  ; Chaque option vient de la table ou d'une validation stricte. Le chemin
+  ; source complet vit dans le fichier de reponse, pas dans un shell.
+  WriteString(F, FpcTargets(Index)\Args + #LF$, #PB_UTF8)
+  If BuildMode = "debug"
+    WriteString(F, "-g" + #LF$ + "-gl" + #LF$, #PB_UTF8)
+  Else
+    WriteString(F, "-O2" + #LF$ + "-Xs" + #LF$, #PB_UTF8)
+  EndIf
+  WriteString(F, "-FE" + ExeDir + #LF$, #PB_UTF8)
+  WriteString(F, "-FU" + UnitDir + #LF$, #PB_UTF8)
+  If OutputName <> ""
+    WriteString(F, "-o" + OutputName + #LF$, #PB_UTF8)
+  EndIf
+  WriteString(F, SafeSource + #LF$, #PB_UTF8)
+  CloseFile(F)
+
+  Protected R.FpcResult
+  FpcRunProgram(Compiler, "@mcp_fpc.rsp", TempDir, G_FpcTimeoutMs, @R)
+
+  Protected Res.s = FpcResultText(FpcTargets(Index)\Id, SafeSource, Compiler, @R, ExeDir, UnitDir)
+  DeleteFile(Response)
+  DeleteDirectory(TempDir, "", #PB_FileSystem_Recursive)
+  ProcedureReturn Res
+EndProcedure
+
+Procedure.i FpcBuildCatalog()
+  Protected RootJSON.i = CreateJSON(#PB_Any)
+  Protected RootVal.i = SetJSONObject(JSONValue(RootJSON))
+  Protected ToolsArr.i = AddJSONMember(RootVal, "tools")
+  SetJSONArray(ToolsArr)
+
+  ToolDef(ToolsArr, "fpc_targets", "Liste les six cibles Free Pascal et la resolution du compilateur", "", "")
+  ToolDef(ToolsArr, "fpc_version", "Version du compilateur Free Pascal resolu", "target|string|Cible optionnelle (ex. linux64)", "")
+  ToolDef(ToolsArr, "fpc_compile", "Compile un source Pascal confine dans MCP_FPC_ROOT", "sourcePath|string|Chemin du source;target|string|Cible (win32, win64, linux32, linux64, linux-aarch64, macos-aarch64);buildMode|string|debug ou release (defaut: debug);outputName|string|Nom de sortie simple (optionnel)", "sourcePath;target")
+
+  ProcedureReturn RootJSON
+EndProcedure
+
+Procedure.s FpcDispatch(ToolName.s, ArgsObj.i, *IsError.Integer)
+  Protected Result.s
+  Select ToolName
+    Case "fpc_targets"
+      Result = ToolFpcTargets()
+    Case "fpc_version"
+      Result = ToolFpcVersion(GetArgString(ArgsObj, "target"))
+    Case "fpc_compile"
+      Result = ToolFpcCompile(GetArgString(ArgsObj, "sourcePath"),
+                              GetArgString(ArgsObj, "target"),
+                              GetArgString(ArgsObj, "buildMode"),
+                              GetArgString(ArgsObj, "outputName"))
+    Default
+      *IsError\i = #True
+      ProcedureReturn "Outil inconnu : " + ToolName
+  EndSelect
+
+  If FindString(Result, "Erreur :") = 1 Or FindString(Result, "Statut    : Echec") = 1
+    *IsError\i = #True
+  EndIf
+  ProcedureReturn Result
+EndProcedure
