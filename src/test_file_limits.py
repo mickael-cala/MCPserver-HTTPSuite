@@ -95,7 +95,9 @@ def main() -> int:
             is_error, text = tool_text(18101, "read_file", {"path": "too-big.txt"})
             check(not is_error, "read_file trop grand retourne une troncature")
             check("Tronque" in text, "read_file marque la troncature")
-            check(len(text.encode("utf-8")) <= LIMIT + 200, "read_file borne la sortie")
+            check("(fichier : " in text, "marqueur indique la taille reelle du fichier")
+            check(str(LIMIT + 1) in text, "taille reelle exacte dans le marqueur")
+            check(len(text.encode("utf-8")) <= LIMIT + 300, "read_file borne la sortie")
 
             is_error, text = tool_text(
                 18101,

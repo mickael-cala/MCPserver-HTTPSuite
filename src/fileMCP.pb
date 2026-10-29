@@ -157,7 +157,11 @@ Procedure.s ToolReadFile(Path.s)
   CloseFile(FileNum)
 
   If Truncated
-    Content + #LF$ + "[... Tronque au-dela de " + Str(#FILE_MAX_READ_BYTES) + " octets ...]"
+    ; Annoncer aussi la taille reelle : l'agent consommateur peut alors
+    ; estimer combien de plages read_file_lines seront necessaires, sans
+    ; appel supplementaire get_file_info.
+    Content + #LF$ + "[... Tronque au-dela de " + Str(#FILE_MAX_READ_BYTES) +
+            " octets (fichier : " + Str(Size) + " octets) ...]"
   EndIf
   ProcedureReturn Content
 EndProcedure
