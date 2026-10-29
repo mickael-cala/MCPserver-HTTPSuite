@@ -17,7 +17,7 @@
 - Aucun argument libre ne peut modifier le compilateur ou ses options.
 - Timeout FPC : 60 000 ms par défaut, borné entre 1 000 et 300 000 ms.
 - stdout et stderr FPC : borne de 64 Kio chacun.
-- Port par défaut de `fpcMCP` : 8108, toujours surchargeable par `MCP_HTTP_PORT`.
+- Port par défaut de `fpcMCP` : 8109 (8108 est déjà pris par `githubMCP`), toujours surchargeable par `MCP_HTTP_PORT`.
 - Les scripts parent `../build.bat` et `../build.sh` ne sont pas modifiés ; livrer `src/fpcMCP.build.patch`.
 - Si `pbcompiler` ou `fpc` est absent du `PATH`, un test peut être marqué `SKIP`, mais aucune étape ne doit présenter un test non exécuté comme réussi.
 - Ne pas exécuter `git add` ou `git commit` sans validation explicite de l’utilisateur pour le lot courant.

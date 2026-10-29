@@ -69,7 +69,9 @@ LogDebug("Racine FPC : " + G_FpcRoot)
 LogDebug("Compilateur FPC par defaut : " + G_FpcCompilerDefault)
 LogDebug("Timeout FPC : " + Str(G_FpcTimeoutMs) + " ms")
 
-If Not MCPHttpMainLoop(8108)
+; Port 8109 : 8108 est deja pris par githubMCP. Surcharge possible via
+; MCP_HTTP_PORT.
+If Not MCPHttpMainLoop(8109)
   End 1
 EndIf
 

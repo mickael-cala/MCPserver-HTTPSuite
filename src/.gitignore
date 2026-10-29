@@ -1,0 +1,8 @@
+# Binaires et répertoires de compilation locaux
+/build/
+/build-test/
+*.exe
+
+# Python
+__pycache__/
+*.pyc
