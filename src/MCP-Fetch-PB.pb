@@ -407,14 +407,26 @@ Procedure.s HtmlToMarkdown(Html.s)
   Md = ReplaceString(Md, "<p>", #LF$ + #LF$)
   Md = ReplaceString(Md, "</p>", #LF$ + #LF$)
 
-  ; Supprimer toutes les autres balises restantes
-  Repeat
-    i = FindString(Md, "<")
-    If i = 0 : Break : EndIf
-    Protected j.i = FindString(Md, ">", i)
-    If j = 0 : Break : EndIf
-    Md = Left(Md, i - 1) + Mid(Md, j + 1)
-  ForEver
+  ; Supprimer toutes les autres balises restantes — une seule passe avec
+  ; copies par fragments (l'ancienne boucle reconstruisait la chaine a
+  ; chaque balise : quadratique sur du HTML volumineux, bloque le serveur
+  ; mono-thread). Un '<' orphelin final est conserve, comme avant.
+  Protected Out.s = "", Pos.i = 1, TagStart.i, TagEnd.i
+  While #True
+    TagStart = FindString(Md, "<", Pos)
+    If TagStart = 0
+      Out + Mid(Md, Pos)
+      Break
+    EndIf
+    Out + Mid(Md, Pos, TagStart - Pos)
+    TagEnd = FindString(Md, ">", TagStart)
+    If TagEnd = 0
+      Out + Mid(Md, TagStart)
+      Break
+    EndIf
+    Pos = TagEnd + 1
+  Wend
+  Md = Out
 
   ; Nettoyage des entites HTML basiques
   Md = ReplaceString(Md, "&nbsp;", " ")

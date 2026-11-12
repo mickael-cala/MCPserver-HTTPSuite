@@ -290,7 +290,10 @@ Procedure.s HttpWinRequest(Url.s, Method.s, Headers.s, Body.s, TimeoutSec.i, *St
   EndIf
 
   Protected *Buf = AllocateMemory(65536)
-  Protected RespBody.s = "", Avail.i = 0, ReadLow.i = 0, TotalRead.i = 0
+  Protected RespBody.s = "", Avail.i = 0, ReadLow.i = 0
+  ; Accumulation en octets bruts, decodage UTF-8 unique a la fin : decoder
+  ; bloc par bloc corrompait un codepoint coupe a une frontiere de 64 Kio.
+  Protected *Accum = 0, AccumCap.i = 0, AccumLen.i = 0
   If *Buf
     While whttp_WinHttpQueryDataAvailable(hRequest, @Avail)
       If Avail <= 0 : Break : EndIf
@@ -299,17 +302,27 @@ Procedure.s HttpWinRequest(Url.s, Method.s, Headers.s, Body.s, TimeoutSec.i, *St
       If whttp_WinHttpReadData(hRequest, *Buf, Avail, @ReadLow) = 0 Or ReadLow <= 0
         Break
       EndIf
-      If G_HttpMaxResponseBytes > 0 And TotalRead + ReadLow > G_HttpMaxResponseBytes
+      If G_HttpMaxResponseBytes > 0 And AccumLen + ReadLow > G_HttpMaxResponseBytes
         *Status\i = -4   ; reponse trop volumineuse (-3 reste reserve aux pre-checks appelants)
         Break
       EndIf
-      TotalRead + ReadLow
-      RespBody + PeekS(*Buf, ReadLow, #PB_UTF8 | #PB_ByteLength)
+      If AccumLen + ReadLow > AccumCap
+        AccumCap = (AccumLen + ReadLow) * 2 + 4096
+        Protected *Grown = ReAllocateMemory(*Accum, AccumCap)
+        If *Grown = 0 : Break : EndIf
+        *Accum = *Grown
+      EndIf
+      CopyMemory(*Buf, *Accum + AccumLen, ReadLow)
+      AccumLen + ReadLow
     Wend
     FreeMemory(*Buf)
+    If *Accum
+      If *Status\i <> -4
+        RespBody = PeekS(*Accum, AccumLen, #PB_UTF8 | #PB_ByteLength)
+      EndIf
+      FreeMemory(*Accum)
+    EndIf
   EndIf
-
-  If *Status\i = -3 : RespBody = "" : EndIf
 
   whttp_WinHttpCloseHandle(hRequest)
   whttp_WinHttpCloseHandle(hConnect)

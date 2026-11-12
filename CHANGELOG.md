@@ -4,6 +4,29 @@ Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [v
 
 ## [Non publié]
 
+### Ajouté (niveau 3 — fuzzing)
+- **`tests/test_fuzz.py`** : harnais de fuzzing déterministe (graine fixe
+  par défaut 20261112, hors gate `run_all`, ~3 min). 4 phases : mutations
+  JSON-RPC (types, champs, octets brutes), HTTP brut par sockets
+  (`Content-Length` menteur, chunked, en-têtes géants, deconnexions),
+  arguments d'outils pervertis (garde `confirm`, null bytes, unicode,
+  bornes), lockout anti brute-force vérifié adversarialement. Oracles :
+  serveur vivant, aucun 5xx (501 chunked exclu : refus volontaire), jeton
+  jamais présent dans une réponse, `/health` dans les temps. Usage :
+  `python tests/test_fuzz.py [--seed N] [--rounds N]`.
+
+### Corrigé
+- **`HtmlToMarkdown` linéarisé** : la boucle de suppression de balises
+  reconstruisait la chaîne à chaque balise (quadratique — 2 Mio de
+  `<b>` bloquaient des dizaines de secondes le serveur mono-thread) ;
+  une seule passe avec copies par fragments, même sémantique
+  (`<` orphelin conservé). Fichier : `src/MCP-Fetch-PB.pb`.
+- **Décodage UTF-8 de bout en bout (WinHTTP)** : le corps était décodé
+  bloc de 64 Kio par bloc — un codepoint coupé à une frontière était
+  corrompu ; accumulation en octets bruts + décodage unique. Au passage,
+  un résidu `-3` (statut remplacé par `-4`) laissait passer un corps
+  tronqué malgré le dépassement de plafond. Fichier : `mcp_common/http.pbi`.
+
 ### Ajouté (niveau 3 — protocole)
 - **Outil inconnu → `-32602` (I12)** : `tools/call` d'un outil absent du
   catalogue renvoie désormais une erreur JSON-RPC `-32602` (erreur de

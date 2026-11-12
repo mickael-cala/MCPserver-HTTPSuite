@@ -169,6 +169,7 @@ run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + in
 ./run_all.sh           # idem sous Linux/macOS
 python tests/test_mcp.py [serveur]   # intégration (150 au total ; sous-ensemble si serveur précisé)
 python tools/bump_version.py X.Y.Z   # version des 9 serveurs depuis une source unique (--check : simulation)
+python tests/test_fuzz.py            # fuzzing transport/outils (hors gate, graine fixe)
 ./clean.sh             # nettoie build/
 ```
 
@@ -356,6 +357,7 @@ tests/test_context7.pb            tests unitaires Context7 (19 tests)
 tests/test_git.pb                 tests unitaires Git (24 tests)
 tests/test_github.pb              tests unitaires GitHub (40 tests)
 tests/test_robustness.py          robustesse T6.1-T6.15 + perf T6.9-T6.14
+tests/test_fuzz.py                fuzzing transport/outils (deterministe, hors gate)
 tests/make_report.py              rapport HTML depuis report.json
 ```
 

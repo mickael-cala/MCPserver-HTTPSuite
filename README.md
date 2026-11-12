@@ -379,8 +379,13 @@ run_all.bat        # ou ./run_all.sh : tout vérifier
 ```bash
 python tests/test_mcp.py                 # les 8 serveurs + transport
 python tests/test_mcp.py memoryMCP       # un seul serveur
+python tests/test_fuzz.py                # fuzzing (hors gate, ~3 min, graine fixe)
 ```
 
+- **Fuzzing (niveau 3)** : `tests/test_fuzz.py` — mutations JSON-RPC, HTTP
+  brut par sockets, arguments d'outils pervertis, lockout adversarial ;
+  oracles : serveur vivant, aucun 5xx, aucune fuite de jeton. Déterministe
+  (`--seed`), hors `run_all`.
 - **Robustesse et performances (Phase 6)** : `tests/test_robustness.py` —
   **21 vérifications** (charge `tools/list`, corps de 1 Mio → 413, JSON
   malformé, port déjà utilisé, kill pendant une requête, deux instances

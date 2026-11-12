@@ -124,9 +124,9 @@ utilisateur est déjà privé (aucun changement).
   de threads.
 - Réflexion d'URL/commandes dans les erreurs et logs (`Left(…,120)`,
   tronqués) : un secret collé dans une commande refusée finit sur stderr.
-- `HtmlToMarkdown` quadratique : 2 Mio de balises = dizaines de secondes de
-  CPU mono-thread. UTF-8 décodé par blocs de 64 Kio : codepoint coupé à une
-  frontière corrompu (`http.pbi`).
+- `HtmlToMarkdown` quadratique : **corrigé** (niveau 3) — suppression de
+  balises en une seule passe. Décodage UTF-8 par blocs de 64 Kio :
+  **corrigé** (accumulation en octets, décodage unique).
 - Comparaison du token/secret : **corrigé** depuis (niveau 2) —
   `HttpConstCompare` à temps constant.
 - `delete_file` récursif sans `confirm` (confiné sous `MCP_ROOT`) alors que

@@ -19,9 +19,8 @@ Les 8 serveurs MCP (phases 0 à 8, voir [PLAN.md](PLAN.md)) sont livrés en
 
 ## Moyen terme
 
-- **Fuzzing du transport et des outils** : harnais `tests/test_fuzz.py`
-  (mutations JSON-RPC, HTTP brut par sockets, arguments d'outils pervertis,
-  oracles : serveur vivant, pas de fuite de token, latence bornée).
+- ~~Fuzzing du transport et des outils~~ : **livré** — `tests/test_fuzz.py`
+  (4 phases, oracles vivant/5xx/fuite/latence, déterministe, hors gate).
 - **Concurrence (I7)** : un outil long bloque `/health` et les autres
   requêtes (mono-thread par design). Piste retenue : file d'attente +
   `503` immédiat pour les requêtes arrivant pendant un outil — mais
