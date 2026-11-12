@@ -90,7 +90,7 @@ Procedure.i GitRun(RepoPath.s, GitArgs.s, *R.GitResult)
   ; repertoire courant (RunProgram ignore un working dir invalide).
   If RepoPath <> "" And FileSize(RepoPath) <> -2
     *R\ExitCode = 1
-    *R\ErrText = "Repertoire introuvable : " + RepoPath
+    *R\ErrText = "Erreur : repertoire introuvable : " + RepoPath
     ProcedureReturn 1
   EndIf
 

@@ -20,9 +20,9 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
    build.bat                  # ou ./build.sh : compile les 8 serveurs
    run_all.bat                # ou ./run_all.sh : unitaires + intégration + rapport
    ```
-   Attendu : **10/10 étapes**, **203 tests unitaires**
-   (46+33+41+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
-   et **147/149 tests d'intégration**. Si ce n'est pas le cas, corriger avant
+   Attendu : **10/10 étapes**, **204 tests unitaires**
+   (47+33+41+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
+   et **147/150 tests d'intégration**. Si ce n'est pas le cas, corriger avant
    toute nouvelle fonctionnalité.
 4. **Choisir la suite** : voir [ROADMAP.md](ROADMAP.md). Ne jamais démarrer
    une phase sans avoir vert `run_all`.
@@ -37,7 +37,7 @@ export PBCOMPILER=$HOME/purebasic-demo/purebasic_demo/compilers/pbcompiler
 export PUREBASIC_HOME=$HOME/purebasic-demo/purebasic_demo
 ./build.sh && ./run_all.sh
 ```
-Attendu : 10/10 étapes (203 unitaires, 21 robustesse/perf, 149 intégration).
+Attendu : 10/10 étapes (204 unitaires, 21 robustesse/perf, 150 intégration).
 Validé sous Windows ET WSL2 Ubuntu 26.04 le 2026-11-12 (outil `exec` +
 durcissement sécurité C1-C3/I1-I2, voir SECURITY-AUDIT.md) : 10/10, 202, 21,
 140. Références antérieures : Windows 2026-11-12 (exec seul) 10/10, 199, 21,
@@ -167,7 +167,7 @@ stop_all.bat           # Windows : arrête les 8 serveurs
 ./stop_all.sh          # Linux/macOS : idem
 run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + intégration + report.html
 ./run_all.sh           # idem sous Linux/macOS
-python tests/test_mcp.py [serveur]   # intégration (149 au total ; sous-ensemble si serveur précisé)
+python tests/test_mcp.py [serveur]   # intégration (150 au total ; sous-ensemble si serveur précisé)
 python tools/bump_version.py X.Y.Z   # version des 9 serveurs depuis une source unique (--check : simulation)
 ./clean.sh             # nettoie build/
 ```
@@ -212,8 +212,9 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
    - avoir son `Case` dans le dispatch ;
    - assainir ses entrées (chemins, refs, segments d'URL) avant usage ;
    - commencer ses messages d'échec par `Erreur` / `ERREUR` / `Impossible` /
-     `Echec` ou contenir `introuvable` / `refusee` / `depasse` pour que
-     `isError` soit positionné (heuristique `DetectIsError`) ;
+     `Echec` — seul le **préfixe** positionne `isError` (heuristique
+     `DetectIsError`, règles « contient » supprimées au niveau 3 : un
+     résultat réussi contenant « introuvable » ne doit plus basculer) ;
    - être couvert par un test unitaire (`tests/test_<serveur>.pb`) et/ou
      d'intégration (`tests/test_mcp.py`).
 7. Protections obligatoires : confinement `MCP_ROOT` (fileMCP), écritures SQL
@@ -346,9 +347,9 @@ stop_all.bat/.sh                  arret des serveurs
 run_all.bat/run_all.sh            compilation + tests unitaires + integration + rapport
 tests/mcp_client.py               harnais de test externe (client MCP HTTP)
 tests/mock_github.py              mock local de l'API GitHub
-tests/test_mcp.py                 tests d'integration + transport (149 tests)
+tests/test_mcp.py                 tests d'integration + transport (150 tests)
 tests/unit_test.pbi               framework de tests unitaires PureBasic
-tests/test_common.pb              tests unitaires mcp_common (46 tests)
+tests/test_common.pb              tests unitaires mcp_common (47 tests)
 tests/test_memory.pb              tests unitaires Memory (33 tests)
 tests/test_database.pb            tests unitaires Database (41 tests)
 tests/test_context7.pb            tests unitaires Context7 (19 tests)

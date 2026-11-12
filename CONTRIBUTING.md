@@ -15,7 +15,7 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
 - le système d'exploitation et la version de PureBasic ;
 - le serveur concerné, l'URL/le port, la requête JSON-RPC envoyée et la
   réponse HTTP/JSON obtenue ;
-- le résultat de `python tests/test_mcp.py` (149 tests) et/ou
+- le résultat de `python tests/test_mcp.py` (150 tests) et/ou
   `run_all.bat` / `./run_all.sh`.
 
 ## Soumettre une modification
@@ -76,8 +76,8 @@ avec les modèles fournis (bug, fonctionnalité). Incluez si possible :
   conditionnels).
 - Robustesse/performance : `tests/test_robustness.py` (charge HTTP, corps
   1 Mio, JSON malformé, port occupé, SSE non imposé, perf).
-- Compteurs de référence : **203 unitaires**, **21 robustesse/perf**,
-  **149 intégration**, `run_all` **10/10**.
+- Compteurs de référence : **204 unitaires**, **21 robustesse/perf**,
+  **150 intégration**, `run_all` **10/10**.
 - `run_all` doit être **vert (10/10)** avant toute pull request.
 - PureBasic Free : garder chaque fichier source sous ~800 lignes (le serveur
   HTTP est scindé en `http_server.pbi` + `http_sse.pbi`).

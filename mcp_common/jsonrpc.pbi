@@ -86,18 +86,54 @@ Procedure AttachResultPayload(ResultObj.i, ContentText.s, IsError.i)
 EndProcedure
 
 ; ---------------------------------------------------------------------------
-; Heuristique d'erreur : un message d'echec d'outil doit commencer par (ou
-; contenir) un de ces marqueurs pour que isError soit positionne. Les outils
-; peuvent aussi lever *IsError\i directement dans le dispatch.
+; Index des outils connus (construit une seule fois depuis le catalogue).
+; Permet de distinguer, conformement a la spec MCP, l'erreur de protocole
+; (outil inconnu -> JSON-RPC -32602) de l'erreur d'execution d'outil
+; (result.isError). Sans catalogue configure, aucun controle (comportement
+; degrade conserve).
+; ---------------------------------------------------------------------------
+Global NewMap G_KnownTools.i()
+
+Procedure.i ToolKnown(ToolName.s)
+  If MapSize(G_KnownTools()) = 0
+    If *G_CatalogBuilder = 0 : ProcedureReturn #True : EndIf
+    Protected J.i = *G_CatalogBuilder()
+    If J = 0 : ProcedureReturn #True : EndIf
+    Protected ToolsArr.i = GetJSONMember(JSONValue(J), "tools")
+    If ToolsArr And JSONType(ToolsArr) = #PB_JSON_Array
+      Protected n.i = JSONArraySize(ToolsArr), i.i, Item.i, NameMember.i
+      For i = 0 To n - 1
+        Item = GetJSONElement(ToolsArr, i)
+        NameMember = GetJSONMember(Item, "name")
+        If NameMember And JSONType(NameMember) = #PB_JSON_String
+          Protected Name.s = GetJSONString(NameMember)
+          If Name <> "" And FindMapElement(G_KnownTools(), Name) = 0
+            AddMapElement(G_KnownTools(), Name)
+            G_KnownTools() = 1
+          EndIf
+        EndIf
+      Next
+    EndIf
+    FreeJSON(J)
+    If MapSize(G_KnownTools()) = 0 : ProcedureReturn #True : EndIf
+  EndIf
+  ProcedureReturn Bool(FindMapElement(G_KnownTools(), ToolName) <> 0)
+EndProcedure
+
+; ---------------------------------------------------------------------------
+; Heuristique d'erreur : un message d'echec d'outil doit COMMENCER par un
+; marqueur pour que isError soit positionne (I10, niveau 3). Les anciennes
+; regles "contient" (introuvable/refusee/depasse) facturaient des isError
+; sur des resultats reussis (une sortie de grep contenant "introuvable", un
+; contenu de fichier parlant de "depasse") : supprimees. Tous les messages
+; d'echec des serveurs commencent par Erreur / ERREUR / Impossible / Echec ;
+; les outils peuvent aussi poser *IsError\i directement dans le dispatch.
 ; ---------------------------------------------------------------------------
 Procedure.i DetectIsError(OutputStr.s)
   If OutputStr = "ACCES_REFUSE"
     ProcedureReturn #True
   EndIf
   If FindString(OutputStr, "Erreur") = 1 Or FindString(OutputStr, "ERREUR") = 1 Or FindString(OutputStr, "Impossible") = 1 Or FindString(OutputStr, "Echec") = 1
-    ProcedureReturn #True
-  EndIf
-  If FindString(OutputStr, "introuvable") > 0 Or FindString(OutputStr, "refusee") > 0 Or FindString(OutputStr, "depasse") > 0
     ProcedureReturn #True
   EndIf
   ProcedureReturn #False
@@ -227,6 +263,15 @@ Procedure.s ProcessRequestToJSON(Line.s, *HttpStatus.Integer)
       If CallParams And JSONType(CallParams) = #PB_JSON_Object
         ToolName = GetArgString(CallParams, "name")
         ArgsMember = GetJSONMember(CallParams, "arguments")
+      EndIf
+
+      ; I12 : outil inconnu = erreur de protocole (-32602), pas un resultat
+      ; isError — l'agent distingue ainsi "outil absent" et "outil en echec".
+      If Not ToolKnown(ToolName)
+        Protected UnknownTool.s = BuildErrorResponse(IdMember, -32602, "Outil inconnu : " + ToolName)
+        FreeJSON(RespJSON)
+        FreeJSON(ReqJSON)
+        ProcedureReturn UnknownTool
       EndIf
 
       Protected OutputStr.s = ""

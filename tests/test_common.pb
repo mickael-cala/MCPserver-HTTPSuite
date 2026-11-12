@@ -45,9 +45,12 @@ Procedure TestDetectIsError()
   UTAssert(1, DetectIsError("ERREUR: URL invalide"), "prefixe ERREUR detecte")
   UTAssert(1, DetectIsError("Impossible d'ouvrir le fichier"), "prefixe Impossible detecte")
   UTAssert(1, DetectIsError("Echec du deplacement"), "prefixe Echec detecte")
-  UTAssert(1, DetectIsError("Fichier introuvable : x"), "introuvable detecte")
-  UTAssert(1, DetectIsError("Modification refusee : secret invalide"), "refusee detecte")
-  UTAssert(1, DetectIsError("Fichier depasse la limite de 5 Mo."), "depasse detecte")
+  ; I10 (niveau 3) : les regles "contient" sont supprimees — un resultat
+  ; reussi contenant "introuvable" (sortie de grep...) ne doit plus etre
+  ; marque isError. Les echecs commencent par un marqueur.
+  UTAssert(0, DetectIsError("Fichier introuvable : x"), "contient seul ne suffit plus")
+  UTAssert(0, DetectIsError("modification refusee par le filtre"), "refusee contient seul ne suffit plus")
+  UTAssert(0, DetectIsError("taille depassee pour cette entree"), "depasse contient seul ne suffit plus")
 
   UTAssert(0, DetectIsError("Fichier ecrit avec succes (12 octets)"), "succes non detecte")
   UTAssert(0, DetectIsError("Repertoire cree : /tmp/x"), "creation non detectee")
@@ -83,6 +86,7 @@ Procedure.i TestCatalogBuilder()
   Protected ToolsArr.i = AddJSONMember(Root, "tools")
   SetJSONArray(ToolsArr)
   ToolDef(ToolsArr, "echo", "Repete le texte recu.", "text|string|Texte a repeter", "text")
+  ToolDef(ToolsArr, "fail", "Echoue volontairement (test isError).", "", "")
   ProcedureReturn J
 EndProcedure
 
@@ -160,7 +164,7 @@ Procedure TestJsonRpc()
   Root = JSONValue(J)
   Res = GetJSONMember(Root, "result")
   Arr = GetJSONMember(Res, "tools")
-  UTAssert(1, JSONArraySize(Arr), "JSON-RPC tools/list : 1 outil")
+  UTAssert(2, JSONArraySize(Arr), "JSON-RPC tools/list : 2 outils")
   UTAssertStr("echo", GetJSONString(GetJSONMember(GetJSONElement(Arr, 0), "name")), "JSON-RPC tools/list : nom echo")
   FreeJSON(J)
 
@@ -180,6 +184,15 @@ Procedure TestJsonRpc()
   J = ParseJSON(#PB_Any, R)
   Res = GetJSONMember(JSONValue(J), "result")
   UTAssert(1, GetJSONBoolean(GetJSONMember(Res, "isError")), "JSON-RPC tools/call : isError true")
+  FreeJSON(J)
+
+  ; I12 : outil absent du catalogue -> erreur de protocole -32602 (spec MCP),
+  ; distincte du result.isError qui signale un echec d'execution.
+  Protected ErrObj.i
+  R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"fantome\",\"arguments\":{}}}", @Status)
+  J = ParseJSON(#PB_Any, R)
+  ErrObj = GetJSONMember(JSONValue(J), "error")
+  UTAssert(1, Bool(ErrObj <> 0 And GetJSONInteger(GetJSONMember(ErrObj, "code")) = -32602), "JSON-RPC outil inconnu : -32602 (I12)")
   FreeJSON(J)
 
   R = ProcessRequestToJSON(~"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}", @Status)

@@ -367,13 +367,13 @@ run_all.bat        # ou ./run_all.sh : tout vérifier
 ```
 
 - **Unitaires (PureBasic)** : `tests/unit_test.pbi` (micro-framework) +
-  6 suites (`tests/test_common.pb` 46, `test_memory.pb` 33, `test_database.pb`
+  6 suites (`tests/test_common.pb` 47, `test_memory.pb` 33, `test_database.pb`
   41, `test_context7.pb` 19, `test_git.pb` 24, `test_github.pb` 40 — soit
-  **203 tests** hors réseau). Chaque futur module ajoute un
+  **204 tests** hors réseau). Chaque futur module ajoute un
   `tests/test_<module>.pb`.
 - **Intégration (Python)** : `tests/mcp_client.py` (harnais client MCP HTTP
   avec validation de conformité JSON-RPC 2.0) + `tests/test_mcp.py`
-  (**149 tests** qui exercent les outils, le transport HTTP et les cas de
+  (**150 tests** qui exercent les outils, le transport HTTP et les cas de
   sécurité) :
 
 ```bash
@@ -395,9 +395,9 @@ MCP_STRESS_REQUESTS=10000 python tests/test_robustness.py   # charge complète
 Le binaire de chaque serveur est cherché dans `build/`, puis `src/` ; la
 variable `<NOM>_BIN` (ex. `FILEMCP_BIN`, `MEMORYMCP_BIN`) force un chemin.
 
-Résultat de référence : `run_all` **10/10 étapes**, **203 tests unitaires**,
+Résultat de référence : `run_all` **10/10 étapes**, **204 tests unitaires**,
 **21 vérifications de robustesse/performance** (T6.14 conditionnel à une clé
-Context7), **149 tests d'intégration**. Validé sous **Windows** (149 tests,
+Context7), **150 tests d'intégration**. Validé sous **Windows** (150 tests,
 incluant l'outil `exec` et le durcissement sécurité) ; la référence précédente
 **Linux (WSL2 Ubuntu 26.04, 124 tests)** précède `exec` et le durcissement ;
 macOS reste à valider.
@@ -560,9 +560,9 @@ run_all.bat / run_all.sh    # Compilation + tests + rapport
 tests/
 ├── mcp_client.py           # Harnais de test externe (client MCP HTTP)
 ├── mock_github.py          # Mock local de l'API GitHub (intégration)
-├── test_mcp.py             # Tests fonctionnels + transport (149 tests)
+├── test_mcp.py             # Tests fonctionnels + transport (150 tests)
 ├── unit_test.pbi           # Micro-framework de tests unitaires PureBasic
-├── test_common.pb          # Tests unitaires des modules mcp_common (46 tests)
+├── test_common.pb          # Tests unitaires des modules mcp_common (47 tests)
 ├── test_memory.pb          # Tests unitaires du serveur Memory (33 tests)
 ├── test_database.pb        # Tests unitaires du serveur Database (41 tests)
 ├── test_context7.pb        # Tests unitaires du serveur Context7 (19 tests)

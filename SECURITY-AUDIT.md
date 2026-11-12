@@ -15,7 +15,7 @@
 
 | Axe | Usage local loopback (contrat affiché) | Exposition réseau / multi-utilisateur |
 |---|---|---|
-| Dev | ✅ Production : tests (203 unitaires, 149 intégration, 21 robustesse), bornes systématiques, docs synchronisées | 🟠 Mono-thread bloque `/health`, pas de CI ni release binaires |
+| Dev | ✅ Production : tests (204 unitaires, 150 intégration, 21 robustesse), bornes systématiques, docs synchronisées | 🟠 Mono-thread bloque `/health`, pas de CI ni release binaires |
 | Cyber | ✅ fileMCP, memory, git, sequential · 🟠 fetch et dbMCP à durcir | 🔴 Non — 3 failles critiques (corrigées, voir Statut) |
 | UX agent | ✅ Catalogue propre, erreurs HTTP sémantiques, troncatures informatives | 🟠 Sorties en prose non structurée, `isError` heuristique |
 
@@ -107,9 +107,9 @@ utilisateur est déjà privé (aucun changement).
 | I7 | Mono-thread strict : un outil lent (fetch 15 s, exec 60 s) bloque `/health` et les keep-alives SSE. | `http_server.pbi:705-735` | Ouvert (choix documenté) |
 | I8 | Pas d'isolation par requête : une erreur runtime PureBasic tue le processus. | — | **Mitigué** : `tools/watchdog_all.bat/.sh` relance les serveurs morts toutes les 10 s ; l'isolation par sous-processus reste ouverte |
 | I9 | Pas de release binaires, pas de CI, version bumpée à la main dans 8 fichiers. | — | Ouvert (bloque aussi la soumission Agensi) |
-| I10 | `DetectIsError` heuristique sur la prose française : un résultat réussi contenant « introuvable » (sortie de grep, contenu de fichier) bascule `isError: true`. | `jsonrpc.pbi:93-104` | Ouvert (heuristique + posage explicite dans le dispatch) |
+| I10 | `DetectIsError` heuristique sur la prose française : un résultat réussi contenant « introuvable » bascule `isError: true`. | `jsonrpc.pbi` | **Corrigé** : règles « contient » supprimées (préfixe seul), 13 messages d'échec migrés vers le préfixe `Erreur :` |
 | I11 | Sorties en prose non structurée (parsing par l'agent) ; `structuredContent` (spec MCP) inutilisé. | — | Ouvert |
-| I12 | Outil inconnu → `result.isError` au lieu d'une erreur JSON-RPC `-32602` ; `id` numériques via Double (précision > 2⁵³). | `jsonrpc.pbi:202-209,223-248` | Ouvert |
+| I12 | Outil inconnu → `result.isError` au lieu d'une erreur JSON-RPC `-32602`. | `jsonrpc.pbi` | **Corrigé** : index des outils construit depuis le catalogue, outil inconnu → `-32602` (spécification MCP) ; reste : `id` numériques via Double (limite de la bibliothèque JSON PureBasic, précision > 2⁵³) |
 
 ## Parano / mineurs (connus et assumés)
 
@@ -150,7 +150,7 @@ utilisateur est déjà privé (aucun changement).
   strict (`415`) ; `Origin` en égalité exacte ; drain borné avant `413` ;
   timeout d'inactivité ; codes 408/411/431/503 sémantiques.
 - **Culture** : bornes partout, fail-closed par principe, documentation
-  synchronisée par checklist avant commit, 203 unitaires + 149 intégration
+  synchronisée par checklist avant commit, 204 unitaires + 150 intégration
   + 21 robustesse/perf avec mock et rapports.
 
 ## Statut des corrections (semaine 1 de durcissement)
@@ -174,6 +174,20 @@ utilisateur est déjà privé (aucun changement).
 | Niveau 2 (bonus) | Comparaison à temps constant (`HttpConstCompare` : jeton Bearer + `change_root`) ; `MCP_HTTP_AUTH_LOCKOUT` (429 après 20 401/60 s) ; `MCP_HTTP_RATE_LIMIT` (opt-in) | Intégration : 3 échecs d'auth → 429 ; rate limit → 429 après le plafond |
 | Niveau 3 (I8-lite) | `tools/watchdog_all.bat/.sh` : relance automatique des serveurs morts | Manuel (scripts de supervision) |
 
+**Semaine 3 (protocole, I10-I12)** — validée Windows ET WSL2 (204 unitaires,
+21 robustesse, 150 intégration) :
+
+| Constat | Correction | Tests |
+|---|---|---|
+| I12 | Outil inconnu → erreur JSON-RPC `-32602` (index construit depuis le catalogue, sans modification des serveurs) | Unité + intégration : outil fantôme → `-32602`, outil connu inchangé |
+| I10 | `DetectIsError` préfixe seul (`Erreur`/`ERREUR`/`Impossible`/`Echec`), règles « contient » supprimées ; 13 messages d'échec migrés | Unité : « Fichier introuvable : x » seul n'est plus une erreur ; intégration complète verte (aucun faux négatif) |
+
+Reste ouvert : I7 (concurrence — décision de design : threads interdits sans
+revoir le couplage `G_HttpHeaders`, file d'attente discutable sans pompage
+d'événements), I11 (`structuredContent` — conception de schémas par outil),
+mineurs (petits-fils de `exec`, `HtmlToMarkdown` O(n²), UTF-8 par blocs,
+CI, macOS).
+
 Reste ouvert : I7-I12 et les mineurs (cf. ROADMAP.md). Les compteurs de
 tests cités dans ce document correspondent à l'état post-correction
-(203 unitaires, 149 intégration, 21 robustesse/perf).
+(204 unitaires, 150 intégration, 21 robustesse/perf).

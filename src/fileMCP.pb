@@ -110,7 +110,7 @@ EndProcedure
 Procedure.s ToolListFiles(Path.s)
   Protected SafePath.s = ValiderChemin(Path)
   If SafePath = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
-  If FileSize(SafePath) <> -2 : ProcedureReturn "Le repertoire n'existe pas : " + Path : EndIf
+  If FileSize(SafePath) <> -2 : ProcedureReturn "Erreur : le repertoire n'existe pas : " + Path : EndIf
 
   Protected Res.s = "", Count.i = 0
   Protected Dir.i = ExamineDirectory(#PB_Any, SafePath, "*")
@@ -134,7 +134,7 @@ EndProcedure
 Procedure.s ToolReadFile(Path.s)
   Protected SafePath.s = ValiderChemin(Path)
   If SafePath = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
-  If FileSize(SafePath) < 0 : ProcedureReturn "Fichier introuvable : " + Path : EndIf
+  If FileSize(SafePath) < 0 : ProcedureReturn "Erreur : fichier introuvable : " + Path : EndIf
 
   Protected FileNum.i = ReadFile(#PB_Any, SafePath)
   If Not FileNum : ProcedureReturn "Impossible d'ouvrir le fichier : " + Path : EndIf
@@ -176,11 +176,11 @@ EndProcedure
 Procedure.s ToolReadFileLines(Path.s, StartLine.i, MaxLines.i)
   Protected SafePath.s = ValiderChemin(Path)
   If SafePath = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
-  If FileSize(SafePath) < 0 : ProcedureReturn "Fichier introuvable : " + Path : EndIf
+  If FileSize(SafePath) < 0 : ProcedureReturn "Erreur : fichier introuvable : " + Path : EndIf
   ; Lecture ligne par ligne != lecture moins couteuse : une ligne peut etre
   ; enorme. La borne de fichier reste donc identique a read_file.
   If FileSize(SafePath) > #FILE_MAX_READ_BYTES
-    ProcedureReturn "Fichier depasse la limite de 2 Mio."
+    ProcedureReturn "Erreur : fichier depasse la limite de 2 Mio."
   EndIf
 
   Protected FileNum.i = ReadFile(#PB_Any, SafePath)
@@ -221,7 +221,7 @@ EndProcedure
 Procedure.s ToolCreateDirectory(Path.s)
   Protected SafePath.s = ValiderChemin(Path)
   If SafePath = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
-  If FileSize(SafePath) = -2 : ProcedureReturn "Le repertoire existe deja : " + SafePath : EndIf
+  If FileSize(SafePath) = -2 : ProcedureReturn "Erreur : le repertoire existe deja : " + SafePath : EndIf
 
   If NativeCreateDirectories(SafePath)
     ProcedureReturn "Repertoire cree : " + SafePath
@@ -247,14 +247,14 @@ Procedure.s ToolDeleteFile(Path.s)
       ProcedureReturn "Impossible de supprimer le fichier : " + SafePath
     EndIf
   EndIf
-  ProcedureReturn "Cible introuvable : " + SafePath
+  ProcedureReturn "Erreur : cible introuvable : " + SafePath
 EndProcedure
 
 Procedure.s ToolMoveFile(OldPath.s, NewPath.s)
   Protected SafeOld.s = ValiderChemin(OldPath)
   Protected SafeNew.s = ValiderChemin(NewPath)
   If SafeOld = "" Or SafeNew = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
-  If FileSize(SafeOld) = -1 : ProcedureReturn "Source introuvable : " + SafeOld : EndIf
+  If FileSize(SafeOld) = -1 : ProcedureReturn "Erreur : source introuvable : " + SafeOld : EndIf
 
   If RenameFile(SafeOld, SafeNew)
     ProcedureReturn "Deplace avec succes : " + SafeOld + " -> " + SafeNew
@@ -270,7 +270,7 @@ EndProcedure
 Procedure.s ToolGetFileInfo(Path.s)
   Protected SafePath.s = ValiderChemin(Path)
   If SafePath = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
-  If FileSize(SafePath) = -1 : ProcedureReturn "Fichier ou dossier introuvable : " + SafePath : EndIf
+  If FileSize(SafePath) = -1 : ProcedureReturn "Erreur : fichier ou dossier introuvable : " + SafePath : EndIf
 
   Protected IsDir.s = "non"
   Protected Size.q = FileSize(SafePath)
@@ -336,7 +336,7 @@ EndProcedure
 Procedure.s ToolSearchFiles(Path.s, Pattern.s)
   Protected SafePath.s = ValiderChemin(Path)
   If SafePath = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
-  If FileSize(SafePath) <> -2 : ProcedureReturn "Repertoire introuvable : " + SafePath : EndIf
+  If FileSize(SafePath) <> -2 : ProcedureReturn "Erreur : repertoire introuvable : " + SafePath : EndIf
 
   NewList Matches.s()
   Protected Total.Integer\i = 0
@@ -356,20 +356,20 @@ EndProcedure
 
 Procedure.s ToolChangeRoot(NewRoot.s, Secret.s)
   If G_RootSecret = ""
-    ProcedureReturn "Modification refusee : MCP_ROOT_SECRET non configure cote serveur."
+    ProcedureReturn "Erreur : modification refusee : MCP_ROOT_SECRET non configure cote serveur."
   EndIf
   ; Comparaison a temps constant (mcp_common/http_server.pbi) : le secret
   ; ne se devine pas caractere par caractere via le temps de reponse.
   If Not HttpConstCompare(Secret, G_RootSecret)
-    ProcedureReturn "Modification refusee : secret invalide."
+    ProcedureReturn "Erreur : modification refusee : secret invalide."
   EndIf
   If FileSize(NewRoot) <> -2
-    ProcedureReturn "Repertoire introuvable : " + NewRoot
+    ProcedureReturn "Erreur : repertoire introuvable : " + NewRoot
   EndIf
 
   Protected NewNormalized.s = NormalizePath(NewRoot)
   If IsLinkOrJunction(NewNormalized)
-    ProcedureReturn "Modification refusee : la racine ne doit pas etre un lien symbolique/junction."
+    ProcedureReturn "Erreur : modification refusee : la racine ne doit pas etre un lien symbolique/junction."
   EndIf
 
   G_AllowedRoot = NewNormalized

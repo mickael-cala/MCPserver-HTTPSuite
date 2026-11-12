@@ -816,6 +816,13 @@ def run_tests_transport():
                   (resp.get("error") or {}).get("code") == -32601, str(resp))
 
             status, body, _ = client.post_raw(
+                b'{"jsonrpc":"2.0","id":60,"method":"tools/call","params":{"name":"outil_fantome","arguments":{}}}',
+                headers={"Content-Type": "application/json"})
+            resp = json.loads(body.decode("utf-8"))
+            check("outil inconnu -> -32602 (I12)",
+                  (resp.get("error") or {}).get("code") == -32602, str(resp))
+
+            status, body, _ = client.post_raw(
                 b'[{"jsonrpc":"2.0","id":1,"method":"ping"}]',
                 headers={"Content-Type": "application/json"})
             resp = json.loads(body.decode("utf-8"))

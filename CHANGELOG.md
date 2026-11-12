@@ -2,6 +2,26 @@
 
 Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [Non publié]
+
+### Ajouté (niveau 3 — protocole)
+- **Outil inconnu → `-32602` (I12)** : `tools/call` d'un outil absent du
+  catalogue renvoie désormais une erreur JSON-RPC `-32602` (erreur de
+  protocole, spécification MCP) au lieu d'un `result.isError` — l'agent
+  distingue « outil absent » et « outil en échec ». L'index des outils est
+  construit depuis le catalogue existant : aucune modification des 8
+  serveurs ; sans catalogue configuré, comportement inchangé.
+  Fichiers : `mcp_common/jsonrpc.pbi`, `tests/test_common.pb` (47 tests),
+  `tests/test_mcp.py`.
+- **Détection d'erreur par préfixe seul (I10)** : les règles « contient »
+  de `DetectIsError` (`introuvable`, `refusee`, `depasse`) sont supprimées
+  — un résultat réussi contenant ces mots (sortie de grep, contenu de
+  fichier) n'est plus marqué `isError`. 13 messages d'échec de fileMCP/git
+  migrés vers le préfixe `Erreur :`. Fichiers : `mcp_common/jsonrpc.pbi`,
+  `src/fileMCP.pb`, `src/git_core.pbi`.
+- **Tests** : intégration 149 → **150**, unitaires 203 → **204**
+  (`test_common.pb` 47). Validé Windows **et** WSL2 (10/10).
+
 ## [2.1.0] - 2026-11-12
 
 ### Sécurité (durcissement semaine 2, audit SECURITY-AUDIT.md)

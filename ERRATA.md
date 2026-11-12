@@ -86,17 +86,21 @@
 
 ## Problèmes connus
 
-- La détection d'erreur (`isError`) repose sur une heuristique sur le texte de
-  réponse (`Erreur`, `Impossible`, `Echec`, `introuvable`, `refusee`,
-  `depasse`). Un message utilisateur contenant ces mots en début de ligne
-  pourrait être mal classé.
+- La détection d'erreur (`isError`) repose sur le **préfixe** du texte de
+  réponse (`Erreur`, `ERREUR`, `Impossible`, `Echec`) — depuis le niveau 3,
+  les anciennes règles « contient » (`introuvable`, `refusee`, `depasse`)
+  sont supprimées : un contenu réussi contenant ces mots (sortie de grep,
+  fichier lu) n'est plus marqué en erreur. Tous les messages d'échec des
+  serveurs commencent par un marqueur ; les clients doivent tester le
+  drapeau `isError`, pas le texte. Outil inconnu → erreur JSON-RPC
+  `-32602` (protocole), distincte d'un échec d'exécution.
 - `change_root` avec un secret incorrect renvoie `isError: true` mais le
   texte reste en français non structuré ; les clients doivent tester le
   drapeau, pas le texte.
 - **Validation** : le durcissement sécurité (audit C1-C3/I1-I2, voir
   SECURITY-AUDIT.md) et l'outil `exec` sont compilés et testés sous
-  **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, **203 unitaires**,
-  21 robustesse/perf, **149 intégration**). Référence 2.0.0 : 124 intégration.
+  **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, **204 unitaires**,
+  21 robustesse/perf, **150 intégration**). Référence 2.0.0 : 124 intégration.
   La validation **macOS** reste à faire.
 - Aucune CI automatisée (PureBasic sous licence).
 
@@ -104,9 +108,9 @@
 
 Dernières exécutions de `run_all` (Windows ET Linux/WSL2, incluant `exec` et
 le durcissement sécurité) : **10/10 étapes** — tests
-unitaires 46 + 33 + 41 + 19 + 24 + 40 = **203** réussis (mcp_common, Memory,
+unitaires 47 + 33 + 41 + 19 + 24 + 40 = **204** réussis (mcp_common, Memory,
 Database, Context7, Git, GitHub), robustesse/performance **21/21**,
-tests d'intégration **149/149** (8 serveurs + transport ; PostgreSQL et
+tests d'intégration **150/150** (8 serveurs + transport ; PostgreSQL et
 Context7 live sont ignorés sans configuration/réseau, GitHub utilise un mock
 local). Références antérieures : 132/132 (exec seul, Windows), 124/124
 (2.0.0).

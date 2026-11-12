@@ -19,9 +19,18 @@ Les 8 serveurs MCP (phases 0 à 8, voir [PLAN.md](PLAN.md)) sont livrés en
 
 ## Moyen terme
 
-- **Sécurité restante** : rate limiting, comparaison constante-time du secret,
-  validation de schéma côté serveur, assainissement des liens Markdown,
-  et réduction de la fenêtre TOCTOU symlink/DNS.
+- **Fuzzing du transport et des outils** : harnais `tests/test_fuzz.py`
+  (mutations JSON-RPC, HTTP brut par sockets, arguments d'outils pervertis,
+  oracles : serveur vivant, pas de fuite de token, latence bornée).
+- **Concurrence (I7)** : un outil long bloque `/health` et les autres
+  requêtes (mono-thread par design). Piste retenue : file d'attente +
+  `503` immédiat pour les requêtes arrivant pendant un outil — mais
+  l'acheminement exige de pomper les événements réseau pendant l'exécution
+  des outils ou des threads, et les threads heurtent le couplage à la map
+  globale `G_HttpHeaders` (voir SECURITY-AUDIT.md) : décision de design à
+  trancher avant d'écrire du code.
+- **`structuredContent` (I11)** : sorties structurées parallèles au texte
+  pour les agents — nécessite de définir un schéma par outil (8 serveurs).
 - **SSE avancé** : notifications serveur→client, progression d'outils et
   reprise de flux (`Last-Event-ID`) ; aujourd'hui le flux SSE sert de canal de
   compatibilité avec keep-alive.

@@ -18,8 +18,8 @@
 
 | Critère | État |
 |---|---|
-| Tests unitaires des modules et serveurs | ✅ 46 + 33 + 41 + 19 + 24 + 40 = **203** (Windows et Linux) |
-| Tests d'intégration (8 serveurs + transport) | ✅ **149/149** |
+| Tests unitaires des modules et serveurs | ✅ 47 + 33 + 41 + 19 + 24 + 40 = **204** (Windows et Linux) |
+| Tests d'intégration (8 serveurs + transport) | ✅ **150/150** |
 | `run_all.bat` / `run_all.sh` vert | ✅ **10/10 étapes** |
 | Robustesse / performances | ✅ **21/21** (T6.14 conditionnel à une clé Context7) |
 | Transport | ✅ HTTP JSON (`POST /mcp`) + SSE optionnel (`GET /mcp` avec `Accept`) |
@@ -27,8 +27,8 @@
 | Aucun secret loggé ni renvoyé | ✅ tokens/clés jamais inclus dans les réponses ; logs stderr |
 | Documentation README complète | ✅ (outils, transport, env, build, tests, config client) |
 | Release publiée | ✅ v2.1.0 préparée (versions bumpées, binaires Windows/Linux + SHA256SUMS ; publication : tag + push) |
-| Validation Windows | ✅ post-2.0.0 (10/10, 203 unitaires, 21 robustesse/perf, 149 intégration, `exec` + durcissement sécurité) |
-| Validation Linux | ✅ post-2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 203, 21, 147, même périmètre) ; référence 2.0.0 : 124 |
+| Validation Windows | ✅ post-2.0.0 (10/10, 204 unitaires, 21 robustesse/perf, 150 intégration, `exec` + durcissement sécurité) |
+| Validation Linux | ✅ post-2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 204, 21, 150, même périmètre) ; référence 2.0.0 : 124 |
 | Validation macOS | ⏳ à faire (prérequis : `curl`) |
 | Sécurité réseau | ✅ bind loopback, Origin, jeton optionnel, corps borné |
 
@@ -45,7 +45,7 @@
 | `gitMCP` | 8107 | 7 | 24 | 12 | README, SECURITY, ERRATA |
 | `githubMCP` | 8108 | 10 | 40 | 25 | README, SECURITY, ERRATA |
 
-Total : **46 outils**, **203 tests unitaires**, **149 tests d'intégration**
+Total : **46 outils**, **204 tests unitaires**, **150 tests d'intégration**
 (dont 24 tests de transport HTTP), **21 vérifications de robustesse/perf**.
 
 ## Détail des phases
@@ -131,7 +131,7 @@ Total : **46 outils**, **203 tests unitaires**, **149 tests d'intégration**
 - **Tests** : `tests/mcp_client.py` réécrit en HTTP ; 21 tests de transport
   ajoutés (124 au total à l'époque, 140 aujourd'hui) ; robustesse
   adaptée (21 vérifications) ; `test_common.pb` couvre le noyau JSON-RPC
-  (46 tests).
+  (47 tests).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, CHANGELOG, ERRATA,
   CONTRIBUTING, SECURITY et modèles GitHub alignés sur HTTP + SSE optionnel.
 
