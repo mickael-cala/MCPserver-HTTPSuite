@@ -24,7 +24,7 @@ IncludeFile "github_core.pbi"
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "GitHubMCPServer-PureBasic"
-G_ServerVersion = "2.0.0"
+G_ServerVersion = "2.1.0"
 
 If Not CheckRuntime()
   End 1
@@ -39,7 +39,14 @@ EndIf
 
 Global G_GhApiBaseEnv.s = GetEnvironmentVariable("MCP_GITHUB_API_BASE")
 If G_GhApiBaseEnv <> ""
-  G_GhApiBase = G_GhApiBaseEnv
+  ; Audit I6 : la base est validee — la cle Authorization ne doit partir
+  ; que vers http(s), pas vers file:// ou autre schema detourne.
+  If HttpCheckApiBase(G_GhApiBaseEnv)
+    G_GhApiBase = G_GhApiBaseEnv
+  Else
+    LogError("MCP_GITHUB_API_BASE invalide : arret du serveur.")
+    End 1
+  EndIf
 EndIf
 LogDebug("API GitHub : " + G_GhApiBase)
 

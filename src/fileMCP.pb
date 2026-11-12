@@ -26,6 +26,13 @@ Global G_RootSecret.s
 #MAX_SEARCH_ENTRIES = 10000
 #SEARCH_TIMEOUT_MS  = 10000
 
+; Bornes de l'outil exec (exécution shell confirmée).
+#EXEC_MAX_OUTPUT         = 65536
+#EXEC_DEFAULT_TIMEOUT_MS = 10000
+#EXEC_MAX_TIMEOUT_MS     = 60000
+#EXEC_MAX_CMD_LEN        = 4096
+#EXEC_MAX_BATCH          = 20
+
 ; ---------------------------------------------------------------------------
 ; Utilitaires de chemins (100 % natifs)
 ; ---------------------------------------------------------------------------
@@ -351,7 +358,9 @@ Procedure.s ToolChangeRoot(NewRoot.s, Secret.s)
   If G_RootSecret = ""
     ProcedureReturn "Modification refusee : MCP_ROOT_SECRET non configure cote serveur."
   EndIf
-  If Secret <> G_RootSecret
+  ; Comparaison a temps constant (mcp_common/http_server.pbi) : le secret
+  ; ne se devine pas caractere par caractere via le temps de reponse.
+  If Not HttpConstCompare(Secret, G_RootSecret)
     ProcedureReturn "Modification refusee : secret invalide."
   EndIf
   If FileSize(NewRoot) <> -2
@@ -366,6 +375,190 @@ Procedure.s ToolChangeRoot(NewRoot.s, Secret.s)
   G_AllowedRoot = NewNormalized
   LogDebug("Racine autorisee modifiee : " + G_AllowedRoot)
   ProcedureReturn "Racine autorisee modifiee : " + G_AllowedRoot
+EndProcedure
+
+; ---------------------------------------------------------------------------
+; Outil exec : execution shell confirmee (cmd.exe sous Windows, bash/sh sinon).
+; Chaque appel (commande unique ou lot) doit porter confirm=true : le client
+; MCP soumet l'appel a la validation de l'operateur avant de le renvoyer,
+; comme pour les ecritures githubMCP. Le repertoire de travail est confine
+; sous la racine autorisee, mais la commande elle-meme reste libre : ne
+; confirmer que des commandes verifiees.
+; ---------------------------------------------------------------------------
+
+Procedure.s ToolExec(Confirm.i, Command.s, CommandsArr.i, Workdir.s, TimeoutMs.i)
+  ; Garde de confirmation : une validation humaine par commande ou par lot.
+  If Not Confirm
+    LogError("exec refuse sans confirmation : " + Left(Command, 120))
+    ProcedureReturn "Erreur : commande non confirmee (confirm=true requis). L'operateur doit valider chaque commande ou lot avant execution."
+  EndIf
+
+  ; Commande unique OU lot, jamais les deux.
+  Protected CmdCount.i = 0
+  If CommandsArr
+    CmdCount = JSONArraySize(CommandsArr)
+    If CmdCount < 0 : CmdCount = 0 : EndIf
+  EndIf
+  If Command <> "" And CmdCount > 0
+    ProcedureReturn "Erreur : fournir command (unique) ou commands (lot), pas les deux."
+  EndIf
+  If Command = "" And CmdCount = 0
+    ProcedureReturn "Erreur : commande vide (command ou commands requis)."
+  EndIf
+  If CmdCount > #EXEC_MAX_BATCH
+    ProcedureReturn "Erreur : lot depasse la limite de " + Str(#EXEC_MAX_BATCH) + " commandes."
+  EndIf
+
+  ; Corps du script : bornes par ligne, elements non texte ignores.
+  NewList Cmds.s()
+  Protected i.i, Elt.i, OneCmd.s
+  If Command <> ""
+    If Len(Command) > #EXEC_MAX_CMD_LEN
+      ProcedureReturn "Erreur : commande depasse " + Str(#EXEC_MAX_CMD_LEN) + " caracteres."
+    EndIf
+    AddElement(Cmds())
+    Cmds() = Command
+  Else
+    For i = 0 To CmdCount - 1
+      Elt = GetJSONElement(CommandsArr, i)
+      If Elt And JSONType(Elt) = #PB_JSON_String
+        OneCmd = GetJSONString(Elt)
+        If OneCmd <> ""
+          If Len(OneCmd) > #EXEC_MAX_CMD_LEN
+            ProcedureReturn "Erreur : commande " + Str(i + 1) + " depasse " + Str(#EXEC_MAX_CMD_LEN) + " caracteres."
+          EndIf
+          AddElement(Cmds())
+          Cmds() = OneCmd
+        EndIf
+      EndIf
+    Next
+    If ListSize(Cmds()) = 0
+      ProcedureReturn "Erreur : lot vide (aucune commande texte valide)."
+    EndIf
+  EndIf
+
+  ; Timeout borne : le serveur est mono-thread, une commande bloquee doit mourir.
+  If TimeoutMs < 1000 : TimeoutMs = 1000 : EndIf
+  If TimeoutMs > #EXEC_MAX_TIMEOUT_MS : TimeoutMs = #EXEC_MAX_TIMEOUT_MS : EndIf
+
+  ; Repertoire de travail confine sous la racine autorisee.
+  If Workdir = ""
+    Workdir = G_AllowedRoot
+  Else
+    Workdir = ValiderChemin(Workdir)
+    If Workdir = "" : ProcedureReturn "ACCES_REFUSE" : EndIf
+  EndIf
+  ; RunProgram ignore silencieusement un working dir invalide (cf. GitRun).
+  If FileSize(Workdir) <> -2
+    ProcedureReturn "Erreur : repertoire de travail introuvable : " + Workdir
+  EndIf
+
+  ; Script temporaire : un seul shell pour tout l'appel (le lot partage cd,
+  ; variables d'environnement...). stderr y est fusionne dans stdout.
+  Protected ScriptExt.s
+  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
+    ScriptExt = ".cmd"
+  CompilerElse
+    ScriptExt = ".sh"
+  CompilerEndIf
+  Protected Script.s = GetTemporaryDirectory() + "mcp_exec_" + Str(Date()) + "_" + Str(Random(999999)) + ScriptExt
+
+  LogDebug("exec confirme : " + Str(ListSize(Cmds())) + " commande(s), workdir=" + Workdir)
+
+  Protected F.i = CreateFile(#PB_Any, Script)
+  If Not F
+    ProcedureReturn "Impossible de creer le script temporaire : " + Script
+  EndIf
+  Protected WriteOk.i = #True
+  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
+    ; cmd.exe lit les .cmd dans la page de code ANSI : ecrire en ASCII
+    ; (les accents ne survivent pas, cf. ERRATA).
+    ForEach Cmds()
+      If Not WriteStringN(F, Cmds(), #PB_Ascii) : WriteOk = #False : EndIf
+    Next
+  CompilerElse
+    ; "exec 2>&1" fusionne stderr des le demarrage du shell, sans modifier
+    ; les lignes de commande elles-memes.
+    If Not WriteStringN(F, "exec 2>&1", #PB_UTF8) : WriteOk = #False : EndIf
+    ForEach Cmds()
+      If Not WriteStringN(F, Cmds(), #PB_UTF8) : WriteOk = #False : EndIf
+    Next
+  CompilerEndIf
+  CloseFile(F)
+  If Not WriteOk
+    DeleteFile(Script)
+    ProcedureReturn "Impossible d'ecrire le script temporaire : " + Script
+  EndIf
+
+  Protected Prog.i
+  CompilerIf #PB_Compiler_OS = #PB_OS_Windows
+    ; cmd.exe exige la forme /c "<commande>" quand celle-ci commence par un
+    ; chemin entre guillemets (idiome documente de cmd, cf. GitRun).
+    Prog = RunProgram("cmd.exe", "/c " + Chr(34) + Chr(34) + Script + Chr(34) + " 2>&1" + Chr(34), Workdir,
+                      #PB_Program_Open | #PB_Program_Read | #PB_Program_Hide)
+  CompilerElse
+    ; bash si present, sinon sh POSIX.
+    Protected Shell.s = "/bin/bash"
+    If FileSize(Shell) = -1
+      Shell = "/bin/sh"
+    EndIf
+    Prog = RunProgram(Shell, Script, Workdir,
+                      #PB_Program_Open | #PB_Program_Read | #PB_Program_Hide)
+  CompilerEndIf
+  If Prog = 0
+    DeleteFile(Script)
+    ProcedureReturn "Impossible de lancer le shell d'execution."
+  EndIf
+
+  ; Lecture avec deadline et sortie bornee. Au-dela de la borne, on continue
+  ; de lire sans stocker : sinon le fils bloquerait sur un pipe plein.
+  Protected StartMs.i = ElapsedMilliseconds()
+  Protected Deadline.i = StartMs + TimeoutMs
+  Protected Out.s = ""
+  Protected OutLine.s
+  Protected Truncated.i = #False
+  Protected TimedOut.i = #False
+
+  Repeat
+    If AvailableProgramOutput(Prog)
+      OutLine = ReadProgramString(Prog, #PB_UTF8)
+      If Not Truncated
+        Out + OutLine + #LF$
+        If Len(Out) > #EXEC_MAX_OUTPUT
+          Out = Left(Out, #EXEC_MAX_OUTPUT) + #LF$ + "[... sortie tronquee ...]"
+          Truncated = #True
+        EndIf
+      EndIf
+    Else
+      Delay(5)
+    EndIf
+    If ElapsedMilliseconds() > Deadline
+      TimedOut = #True
+      KillProgram(Prog)
+      Break
+    EndIf
+  Until ProgramRunning(Prog) = 0 And AvailableProgramOutput(Prog) = 0
+
+  WaitProgram(Prog)
+  Protected ExitCode.i = ProgramExitCode(Prog)
+  Protected DurationMs.i = ElapsedMilliseconds() - StartMs
+  CloseProgram(Prog)
+  DeleteFile(Script)
+
+  Protected Res.s
+  If TimedOut
+    Res = "Echec : commande interrompue apres " + Str(TimeoutMs) + " ms (timeout)." + #LF$
+  ElseIf ExitCode <> 0
+    Res = "Echec : commande terminee avec le code " + Str(ExitCode) + "." + #LF$
+  Else
+    Res = "Commande executee." + #LF$
+  EndIf
+  Res + "Repertoire : " + Workdir + #LF$
+  Res + "Code de sortie : " + Str(ExitCode) + #LF$
+  Res + "Duree : " + Str(DurationMs) + " ms" + #LF$
+  Res + "--- Sortie (stdout+stderr) ---" + #LF$
+  Res + Out
+  ProcedureReturn Res
 EndProcedure
 
 ; ---------------------------------------------------------------------------
@@ -387,6 +580,7 @@ Procedure.i BuildToolsCatalog()
   ToolDef(ToolsArr, "get_file_info", "Infos detaillees fichier/dossier", "path|string|Chemin", "path")
   ToolDef(ToolsArr, "search_files", "Rechercher du texte (recursif)", "path|string|Repertoire de depart;pattern|string|Texte recherche", "path;pattern")
   ToolDef(ToolsArr, "change_root", "CHANGER LA ZONE AUTORISEE", "newRoot|string|Nouveau repertoire racine;secret|string|Mot de passe MCP_ROOT_SECRET", "newRoot;secret")
+  ToolDef(ToolsArr, "exec", "Executer une commande shell (cmd.exe sous Windows, bash sous Linux/macOS) dans un repertoire confine. EXIGE confirm=true : validation humaine requise pour chaque commande ou lot.", "command|string|Commande unique;commands|array|Lot de commandes (un seul shell);workdir|string|Repertoire de travail sous la racine (defaut: racine);timeoutMs|integer|Duree max en ms (defaut:10000, max:60000);confirm|boolean|Doit valoir true", "confirm")
 
   ProcedureReturn RootJSON
 EndProcedure
@@ -416,6 +610,8 @@ Procedure.s ToolDispatch(ToolName.s, ArgsObj.i, *IsError.Integer)
       ProcedureReturn ToolSearchFiles(GetArgString(ArgsObj, "path"), GetArgString(ArgsObj, "pattern"))
     Case "change_root"
       ProcedureReturn ToolChangeRoot(GetArgString(ArgsObj, "newRoot"), GetArgString(ArgsObj, "secret"))
+    Case "exec"
+      ProcedureReturn ToolExec(GetArgBool(ArgsObj, "confirm", 0), GetArgString(ArgsObj, "command"), GetArgArray(ArgsObj, "commands"), GetArgString(ArgsObj, "workdir"), GetArgInt(ArgsObj, "timeoutMs", #EXEC_DEFAULT_TIMEOUT_MS))
     Default
       *IsError\i = #True
       ProcedureReturn "Outil inconnu : " + ToolName
@@ -426,7 +622,7 @@ EndProcedure
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "FileMCPServer-PureBasic"
-G_ServerVersion = "2.0.0"
+G_ServerVersion = "2.1.0"
 *G_ToolHandler = @ToolDispatch()
 *G_CatalogBuilder = @BuildToolsCatalog()
 

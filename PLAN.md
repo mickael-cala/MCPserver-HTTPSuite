@@ -6,7 +6,7 @@
 |---|---|---|---|
 | **0** | Infrastructure commune et harnais de test | ✅ Terminée | `mcp_common/` (runtime, logging, json_helpers, protocol, jsonrpc, http, http_server, http_sse), `tests/mcp_client.py`, `tests/unit_test.pbi`, `run_all.bat/.sh`, serveur de démo `examples/minimal_server.pb` |
 | **1** | Memory (SQLite) | ✅ Terminée | `memoryMCP` (9 outils), 33 tests unitaires, 18 tests d'intégration |
-| **2** | Database (SQLite + PostgreSQL) | ✅ Terminée | `dbMCP` (5 outils, garde-fou lecture seule, PostgreSQL optionnel), 37 tests unitaires, 12 tests d'intégration |
+| **2** | Database (SQLite + PostgreSQL) | ✅ Terminée | `dbMCP` (5 outils, lecture seule applicative + moteur, PostgreSQL optionnel), 41 tests unitaires, 14 tests d'intégration |
 | **3** | Context7 | ✅ Terminée | `context7MCP` (2 outils), WinHTTP + en-têtes, 19 tests unitaires, 7 tests d'intégration (live conditionnel) |
 | **4** | Git | ✅ Terminée | `gitMCP` (7 outils, validation anti-injection), 24 tests unitaires, 12 tests d'intégration |
 | **5** | GitHub | ✅ Terminée | `githubMCP` (10 outils, `confirm=true`, mock local), 40 tests unitaires, 25 tests d'intégration |
@@ -18,17 +18,17 @@
 
 | Critère | État |
 |---|---|
-| Tests unitaires des modules et serveurs | ✅ 46 + 33 + 37 + 19 + 24 + 40 = **199** (Windows et Linux) |
-| Tests d'intégration (8 serveurs + transport) | ✅ **124/124** |
+| Tests unitaires des modules et serveurs | ✅ 46 + 33 + 41 + 19 + 24 + 40 = **203** (Windows et Linux) |
+| Tests d'intégration (8 serveurs + transport) | ✅ **149/149** |
 | `run_all.bat` / `run_all.sh` vert | ✅ **10/10 étapes** |
 | Robustesse / performances | ✅ **21/21** (T6.14 conditionnel à une clé Context7) |
 | Transport | ✅ HTTP JSON (`POST /mcp`) + SSE optionnel (`GET /mcp` avec `Accept`) |
 | Erreurs MCP en `isError: true` avec message clair | ✅ heuristique `DetectIsError` + refus explicites |
 | Aucun secret loggé ni renvoyé | ✅ tokens/clés jamais inclus dans les réponses ; logs stderr |
 | Documentation README complète | ✅ (outils, transport, env, build, tests, config client) |
-| Release publiée | ⏳ v2.0.0 à publier |
-| Validation Windows | ✅ 2.0.0 (10/10, 199 unitaires, 21 robustesse/perf, 124 intégration) |
-| Validation Linux | ✅ 2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 199, 21, 124) |
+| Release publiée | ✅ v2.1.0 préparée (versions bumpées, binaires Windows/Linux + SHA256SUMS ; publication : tag + push) |
+| Validation Windows | ✅ post-2.0.0 (10/10, 203 unitaires, 21 robustesse/perf, 149 intégration, `exec` + durcissement sécurité) |
+| Validation Linux | ✅ post-2.0.0 (WSL2 Ubuntu 26.04 : 10/10, 203, 21, 147, même périmètre) ; référence 2.0.0 : 124 |
 | Validation macOS | ⏳ à faire (prérequis : `curl`) |
 | Sécurité réseau | ✅ bind loopback, Origin, jeton optionnel, corps borné |
 
@@ -36,7 +36,7 @@
 
 | Serveur | Port | Outils | Tests unitaires | Tests d'intégration | Documentation |
 |---|---:|---:|---|---|---|
-| `fileMCP` | 8101 | 10 | — (intégration) | 19 | README, SECURITY |
+| `fileMCP` | 8101 | 11 | — (intégration) | 27 | README, SECURITY, ERRATA |
 | `MCP-Fetch-PB` | 8102 | 1 | — (intégration) | 4 | README |
 | `MCP-SequentialThinking-PB` | 8103 | 1 | — (intégration) | 6 | README |
 | `memoryMCP` | 8104 | 9 | 33 | 18 | README, SECURITY, ERRATA |
@@ -45,8 +45,8 @@
 | `gitMCP` | 8107 | 7 | 24 | 12 | README, SECURITY, ERRATA |
 | `githubMCP` | 8108 | 10 | 40 | 25 | README, SECURITY, ERRATA |
 
-Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
-(dont 21 tests de transport HTTP), **21 vérifications de robustesse/perf**.
+Total : **46 outils**, **203 tests unitaires**, **149 tests d'intégration**
+(dont 24 tests de transport HTTP), **21 vérifications de robustesse/perf**.
 
 ## Détail des phases
 
@@ -129,8 +129,9 @@ Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
 - **Scripts** : `start_all` / `stop_all` (Windows/Linux), correction du bug de
   syntaxe de `run_all.sh`.
 - **Tests** : `tests/mcp_client.py` réécrit en HTTP ; 21 tests de transport
-  ajoutés (124 au total) ; robustesse adaptée (21 vérifications) ;
-  `test_common.pb` couvre le noyau JSON-RPC (46 tests).
+  ajoutés (124 au total à l'époque, 140 aujourd'hui) ; robustesse
+  adaptée (21 vérifications) ; `test_common.pb` couvre le noyau JSON-RPC
+  (46 tests).
 - **Documentation** : README, AGENTS, PLAN, ROADMAP, CHANGELOG, ERRATA,
   CONTRIBUTING, SECURITY et modèles GitHub alignés sur HTTP + SSE optionnel.
 
@@ -145,4 +146,5 @@ Total : **45 outils**, **199 tests unitaires**, **124 tests d'intégration**
   link-local, y compris les formes octales et IPv4-mapped ; plafond de réponse
   à 2 Mo (`HttpGetLimited`, `curl --max-filesize` ou WinHTTP). Refus
   (fail closed) si la résolution DNS échoue.
-- **Tests** : 19 tests fileMCP, 4 tests Fetch, **124 tests d'intégration**.
+- **Tests** : 19 tests fileMCP (27 aujourd'hui avec `exec`), 4 tests Fetch,
+  **124 tests d'intégration** à l'époque (140 aujourd'hui).

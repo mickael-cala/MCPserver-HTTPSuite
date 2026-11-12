@@ -24,7 +24,7 @@ IncludeFile "db_core.pbi"
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "DatabaseMCPServer-PureBasic"
-G_ServerVersion = "2.0.0"
+G_ServerVersion = "2.1.0"
 
 If Not CheckRuntime()
   End 1
@@ -33,6 +33,15 @@ EndIf
 Global G_DBPath.s = GetEnvironmentVariable("MCP_DB_PATH")
 If G_DBPath = ""
   G_DBPath = "database.db"
+EndIf
+
+; Le mode ecriture doit etre connu AVANT l'ouverture des bases : la
+; lecture seule est alors appliquee par le moteur des la connexion
+; (PRAGMA query_only / default_transaction_read_only), pas seulement par
+; le garde applicatif.
+If GetEnvironmentVariable("MCP_DB_ALLOW_WRITE") = "1"
+  G_DBAllowWrite = #True
+  LogDebug("Mode ecriture active (MCP_DB_ALLOW_WRITE=1)")
 EndIf
 
 If Not DbOpenSQLite(G_DBPath)
@@ -48,11 +57,6 @@ If G_PGEnv <> ""
   Else
     LogError("Connexion PostgreSQL impossible : " + DatabaseError() + " (le serveur continue en SQLite)")
   EndIf
-EndIf
-
-If GetEnvironmentVariable("MCP_DB_ALLOW_WRITE") = "1"
-  G_DBAllowWrite = #True
-  LogDebug("Mode ecriture active (MCP_DB_ALLOW_WRITE=1)")
 EndIf
 
 *G_ToolHandler = @DbDispatch()

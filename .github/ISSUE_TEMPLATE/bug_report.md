@@ -26,7 +26,7 @@ labels: bug
 - OS : <!-- Windows 11, Ubuntu 24.04, macOS … -->
 - Version de PureBasic :
 - Client MCP et transport : <!-- Qwen httpUrl, Claude type http, etc. -->
-- Résultat de `python tests/test_mcp.py` : <!-- 124/124 ou détails des échecs -->
+- Résultat de `python tests/test_mcp.py` : <!-- 149/149 ou détails des échecs -->
 
 ## Contexte supplémentaire
 

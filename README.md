@@ -64,7 +64,7 @@ Chaque serveur écoute par défaut sur `127.0.0.1` et un port distinct :
 
 | Serveur | Source | Port | Outils | Description |
 |---|---|---:|---:|---|
-| **fileMCP** | `src/fileMCP.pb` | 8101 | 10 | Gestion de fichiers confinée à une racine (`MCP_ROOT`) |
+| **fileMCP** | `src/fileMCP.pb` | 8101 | 11 | Gestion de fichiers confinée à une racine (`MCP_ROOT`), exécution shell confirmée |
 | **MCP-Fetch-PB** | `src/MCP-Fetch-PB.pb` | 8102 | 1 | Récupération de pages web, conversion HTML → Markdown |
 | **MCP-SequentialThinking-PB** | `src/MCP-SequentialThinking-PB.pb` | 8103 | 1 | Raisonnement séquentiel structuré |
 | **memoryMCP** | `src/memoryMCP.pb` + `src/memory_core.pbi` | 8104 | 9 | Graphe d'entités persistant en SQLite (`MCP_MEMORY_DB`) |
@@ -131,15 +131,16 @@ Les flux SSE ouverts reçoivent un commentaire `: connected` puis des
 | Outil | Description | Paramètres |
 |---|---|---|
 | `list_files` | Lister le contenu d'un répertoire (confiné à la racine autorisée) | `path` |
-| `read_file` | Lire un fichier texte (tronqué au-delà de 20 000 octets) | `path` |
-| `read_file_lines` | Lire une plage de lignes (fichier limité à 5 Mo) | `path`, `startLine` (défaut 1), `maxLines` (défaut 50) |
+| `read_file` | Lire un fichier texte (tronqué au-delà de 2 Mio) | `path` |
+| `read_file_lines` | Lire une plage de lignes (fichier limité à 2 Mio) | `path`, `startLine` (défaut 1), `maxLines` (défaut 50) |
 | `write_file` | Écrire/créer un fichier texte | `path`, `content` |
 | `create_directory` | Créer un répertoire | `path` |
-| `delete_file` | Supprimer un fichier ou dossier vide | `path` |
+| `delete_file` | Supprimer un fichier ou dossier (récursif) | `path` |
 | `move_file` | Déplacer ou renommer un fichier | `oldPath`, `newPath` |
 | `get_file_info` | Infos détaillées fichier/dossier | `path` |
 | `search_files` | Rechercher du texte (récursif, borné : profondeur 32, 10 000 entrées, 10 s) | `path`, `pattern` |
 | `change_root` | Changer la zone autorisée (refuse une racine lien/junction) | `newRoot`, `secret` |
+| `exec` | Exécuter une commande shell (`cmd.exe` sous Windows, `bash`/`sh` sinon) dans un répertoire confiné. **Exige `confirm=true`** : une validation humaine par commande ou par lot ; sortie stdout+stderr bornée à 64 Kio, timeout 10 s par défaut (60 s max) | `command` ou `commands` (lot ≤ 20), `workdir` (défaut : racine), `timeoutMs`, `confirm` |
 
 Tous les chemins sont normalisés et confinés à `MCP_ROOT`. Les composants
 **symlinks/junctions** situés sous la racine sont refusés (Windows : bit
@@ -149,13 +150,21 @@ reparse ; Linux/macOS : `#PB_FileSystem_Link`).
 
 | Outil | Description | Paramètres |
 |---|---|---|
-| `fetch` | Récupère une URL et retourne son contenu en Markdown (ou HTML brut si `raw=true`), réponse plafonnée à 2 Mo | `url`, `max_length` (défaut 5000), `start_index` (défaut 0), `raw` (défaut false) |
+| `fetch` | Récupère une URL et retourne son contenu en Markdown (ou HTML brut si `raw=true`), réponse plafonnée à 2 Mo, redirections suivies manuellement (≤ 5 sauts, chacun revalidé) | `url`, `max_length` (défaut 5000), `start_index` (défaut 0), `raw` (défaut false) |
 
-Les URLs non HTTP/HTTPS, les IPs littérales privées et les **hostnames qui
-résolvent vers une IP privée/loopback/ULA/link-local** sont refusés (SSRF).
-La résolution DNS utilise `getent` (Linux), `nslookup` (Windows) ou
-`dscacheutil` (macOS), avec un timeout de 5 s ; en cas d'échec, la requête est
-refusée. Un timeout plafonne la durée et la réponse est limitée à 2 Mo.
+Les URLs non HTTP/HTTPS, les **ports non standards** (http=80, https=443), les
+URLs contenant des caractères de contrôle, les IPs littérales privées et les
+**hostnames qui résolvent vers une IP privée/loopback/ULA/link-local** sont
+refusés (SSRF). La résolution DNS utilise `getent` (Linux), `nslookup`
+(Windows) ou `dscacheutil` (macOS), avec un timeout de 5 s ; en cas d'échec,
+la requête est refusée. Les redirections automatiques sont désactivées : le
+serveur suit les 301/302/303/307/308 à la main (5 sauts max) et **revalide
+chaque cible** (schéma, hôte, DNS, port) avant la requête suivante — un 302
+vers une IP privée est refusé, jamais suivi. L'IP validée est de plus
+**épinglée** (curl `connect-to`) ou vérifiée après connexion (WinHTTP) : un
+DNS qui rechangerait d'avis entre la validation et la connexion (DNS
+rebinding) ne peut pas faire joindre une IP privée. Un timeout plafonne la
+durée et la réponse est limitée à 2 Mo.
 
 ### MCP-SequentialThinking-PB — raisonnement séquentiel
 
@@ -191,10 +200,15 @@ suppressions d'entités cascadent via les clés étrangères.
 | `db_execute_query` | Exécute une requête — lecture seule par défaut, résultat limité à 1000 lignes | `query`, `engine` |
 | `db_explain` | Plan d'exécution (`EXPLAIN QUERY PLAN` / `EXPLAIN`) | `query`, `engine` |
 
-Garde-fou lecture seule : seuls `SELECT`/`WITH` (sans verbe d'écriture)/`SHOW`/
-`EXPLAIN`/`DESCRIBE` passent ; toute écriture exige `MCP_DB_ALLOW_WRITE=1` et
-est journalisée sur stderr en cas de refus. La connexion PostgreSQL impose
-`statement_timeout=30s`. Les résultats JSON préservent les NULL
+Garde-fou lecture seule à deux étages : (1) applicatif — seuls
+`SELECT`/`WITH` (sans verbe d'écriture)/`SHOW`/`DESCRIBE` passent, tout `;`
+(multi-statements) est refusé et `EXPLAIN` est exclu (`EXPLAIN ANALYZE`
+exécute le DML sur PostgreSQL) ; (2) **moteur** — `PRAGMA query_only=1`
+(SQLite) et `default_transaction_read_only=on` (PostgreSQL) sont appliqués à
+l'ouverture quand `MCP_DB_ALLOW_WRITE` n'est pas `1` : même une faille du
+garde applicatif ne permet plus d'écrire. Le mode écriture est figé au
+démarrage et journalisé ; les refus le sont aussi. La connexion PostgreSQL
+impose `statement_timeout=30s`. Les résultats JSON préservent les NULL
 (`CheckDatabaseNull`) et typent entiers/flottants.
 
 ### context7MCP — documentation de bibliothèques
@@ -249,7 +263,10 @@ sans réseau.
 
 Attention : `write_file`, `delete_file`, `move_file` et `change_root` sont des
 opérations destructrices ou sensibles. Ne connectez `fileMCP` qu'à un répertoire
-dont la perte de contenu serait acceptable.
+dont la perte de contenu serait acceptable. `exec` exécute une commande shell
+arbitraire : chaque appel doit porter `confirm=true` (validation humaine côté
+client MCP, refus journalisés côté serveur) et le répertoire de travail confiné
+sous `MCP_ROOT` ne limite **pas** les effets de la commande elle-même.
 
 ## Configuration
 
@@ -262,6 +279,9 @@ dont la perte de contenu serait acceptable.
 | `MCP_HTTP_TOKEN` | Jeton Bearer exigé sur `POST /mcp` **et** `GET /mcp` (SSE) (`Authorization: Bearer …`) | vide = pas d'auth |
 | `MCP_HTTP_MAX_BODY` | Taille maximale du corps JSON (octets, borné 1 Kio–16 Mio) | `1048576` |
 | `MCP_HTTP_ALLOWED_ORIGINS` | Origines supplémentaires autorisées (liste séparée par virgules) | vide |
+| `MCP_HTTP_ALLOWED_HOSTS` | Hôtes (en-tête `Host`) supplémentaires autorisés sur `/mcp`, séparés par virgules — protection anti DNS rebinding (`403` sinon) | loopback + hôte d'écoute |
+| `MCP_HTTP_AUTH_LOCKOUT` | Nombre d'échecs d'authentification (401) en 60 s au-delà duquel `/mcp` est bloqué 30 s (`429`) — anti brute-force du jeton | `20` (0 = désactivé) |
+| `MCP_HTTP_RATE_LIMIT` | Requêtes `/mcp` max par fenêtre de 10 s (`429` au-delà). Opt-in pour les expositions hors loopback ; `/health` est exempt | `0` = désactivé |
 | `MCP_HTTP_LOG_REQUESTS` | `1` = journaliser méthode/chemin/statut/durée/version MCP sur stderr (jamais le corps) | désactivé |
 
 Les origines loopback du port courant (`http://127.0.0.1:<port>`,
@@ -348,12 +368,12 @@ run_all.bat        # ou ./run_all.sh : tout vérifier
 
 - **Unitaires (PureBasic)** : `tests/unit_test.pbi` (micro-framework) +
   6 suites (`tests/test_common.pb` 46, `test_memory.pb` 33, `test_database.pb`
-  37, `test_context7.pb` 19, `test_git.pb` 24, `test_github.pb` 40 — soit
-  **199 tests** hors réseau). Chaque futur module ajoute un
+  41, `test_context7.pb` 19, `test_git.pb` 24, `test_github.pb` 40 — soit
+  **203 tests** hors réseau). Chaque futur module ajoute un
   `tests/test_<module>.pb`.
 - **Intégration (Python)** : `tests/mcp_client.py` (harnais client MCP HTTP
   avec validation de conformité JSON-RPC 2.0) + `tests/test_mcp.py`
-  (**124 tests** qui exercent les outils, le transport HTTP et les cas de
+  (**149 tests** qui exercent les outils, le transport HTTP et les cas de
   sécurité) :
 
 ```bash
@@ -375,10 +395,12 @@ MCP_STRESS_REQUESTS=10000 python tests/test_robustness.py   # charge complète
 Le binaire de chaque serveur est cherché dans `build/`, puis `src/` ; la
 variable `<NOM>_BIN` (ex. `FILEMCP_BIN`, `MEMORYMCP_BIN`) force un chemin.
 
-Résultat de référence : `run_all` **10/10 étapes**, **199 tests unitaires**,
+Résultat de référence : `run_all` **10/10 étapes**, **203 tests unitaires**,
 **21 vérifications de robustesse/performance** (T6.14 conditionnel à une clé
-Context7), **124 tests d'intégration**. Validé sous **Windows** et
-**Linux (WSL2 Ubuntu 26.04)** ; macOS reste à valider.
+Context7), **149 tests d'intégration**. Validé sous **Windows** (149 tests,
+incluant l'outil `exec` et le durcissement sécurité) ; la référence précédente
+**Linux (WSL2 Ubuntu 26.04, 124 tests)** précède `exec` et le durcissement ;
+macOS reste à valider.
 
 ## Configuration d'un client MCP
 
@@ -538,11 +560,11 @@ run_all.bat / run_all.sh    # Compilation + tests + rapport
 tests/
 ├── mcp_client.py           # Harnais de test externe (client MCP HTTP)
 ├── mock_github.py          # Mock local de l'API GitHub (intégration)
-├── test_mcp.py             # Tests fonctionnels + transport (124 tests)
+├── test_mcp.py             # Tests fonctionnels + transport (149 tests)
 ├── unit_test.pbi           # Micro-framework de tests unitaires PureBasic
 ├── test_common.pb          # Tests unitaires des modules mcp_common (46 tests)
 ├── test_memory.pb          # Tests unitaires du serveur Memory (33 tests)
-├── test_database.pb        # Tests unitaires du serveur Database (37 tests)
+├── test_database.pb        # Tests unitaires du serveur Database (41 tests)
 ├── test_context7.pb        # Tests unitaires du serveur Context7 (19 tests)
 ├── test_git.pb             # Tests unitaires du serveur Git (24 tests)
 ├── test_github.pb          # Tests unitaires du serveur GitHub (40 tests)

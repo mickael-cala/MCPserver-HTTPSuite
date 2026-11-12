@@ -13,6 +13,9 @@ Global G_GhToken.s = ""
 Global G_GhApiBase.s = "https://api.github.com"
 
 #GH_MAX_PER_PAGE = 100
+; Plafond de taille des reponses API (audit I5) : le plus gros JSON
+; legitime (per_page=100) reste tres en dessous.
+#GH_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 ; ---------------------------------------------------------------------------
 ; Validation / echappement
@@ -115,13 +118,15 @@ Procedure.s GhErrorText(Status.i, Body.s)
 EndProcedure
 
 ; GET JSON. Retourne (statut, corps) ; en cas de succes le JSON est valide.
+; Reponse plafonnee (audit I5) : le plus gros JSON legitime (per_page=100)
+; reste tres en dessous de 4 Mio.
 Procedure.s GhGet(Path.s, *Status.Integer)
   *Status\i = -1
   If G_GhToken = ""
     *Status\i = -3
     ProcedureReturn ""
   EndIf
-  ProcedureReturn HttpGetHeaders(G_GhApiBase + Path, GhHeaders(#False), 20, *Status)
+  ProcedureReturn HttpGetLimited(G_GhApiBase + Path, GhHeaders(#False), 20, #GH_MAX_RESPONSE_BYTES, *Status)
 EndProcedure
 
 ; POST JSON (Body deja serialise). Retourne (statut, corps).
@@ -131,7 +136,7 @@ Procedure.s GhPost(Path.s, Body.s, *Status.Integer)
     *Status\i = -3
     ProcedureReturn ""
   EndIf
-  ProcedureReturn HttpPostHeaders(G_GhApiBase + Path, GhHeaders(#True), Body, 20, *Status)
+  ProcedureReturn HttpPostLimited(G_GhApiBase + Path, GhHeaders(#True), Body, 20, #GH_MAX_RESPONSE_BYTES, *Status)
 EndProcedure
 
 ; Verifie token configure, sinon message pret a renvoyer.
@@ -146,6 +151,9 @@ EndProcedure
 Procedure.s GhFinish(Status.i, Body.s, Context.s)
   If Status = -3
     ProcedureReturn "Erreur GitHub : MCP_GITHUB_TOKEN non configure cote serveur."
+  EndIf
+  If Status = -4
+    ProcedureReturn "Erreur GitHub : reponse trop volumineuse (plafond interne)."
   EndIf
   If Status < 200 Or Status >= 300
     ProcedureReturn GhErrorText(Status, Body)

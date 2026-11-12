@@ -28,7 +28,19 @@ Procedure.i DbOpenSQLite(Path.s)
     CloseFile(Tmp)
   EndIf
   G_DBSQLite = OpenDatabase(#PB_Any, Path, "", "")
-  ProcedureReturn Bool(G_DBSQLite <> 0)
+  If G_DBSQLite = 0 : ProcedureReturn #False : EndIf
+  ; Defense en profondeur : lecture seule appliquee par le moteur quand
+  ; MCP_DB_ALLOW_WRITE n'est pas actif (l'application refuse PRAGMA et les
+  ; multi-statements, donc le client ne peut pas la lever).
+  If Not G_DBAllowWrite
+    If Not DatabaseQuery(G_DBSQLite, "PRAGMA query_only = 1")
+      LogError("Impossible de forcer la lecture seule SQLite (PRAGMA query_only).")
+      CloseDatabase(G_DBSQLite) : G_DBSQLite = 0
+      ProcedureReturn #False
+    EndIf
+    FinishDatabaseQuery(G_DBSQLite)
+  EndIf
+  ProcedureReturn #True
 EndProcedure
 
 Procedure.i DbOpenPostgres(DSN.s)
@@ -40,6 +52,16 @@ Procedure.i DbOpenPostgres(DSN.s)
   G_DBPostgres = OpenDatabase(#PB_Any, DSN, "", "")
   If G_DBPostgres = 0
     ProcedureReturn #False
+  EndIf
+  ; Defense en profondeur : lecture seule appliquee par le moteur quand
+  ; MCP_DB_ALLOW_WRITE n'est pas actif (l'application refuse SET/BEGIN et
+  ; les multi-statements, donc le client ne peut pas la lever).
+  If Not G_DBAllowWrite
+    If Not DatabaseUpdate(G_DBPostgres, "SET default_transaction_read_only = on")
+      LogError("Impossible de forcer la lecture seule PostgreSQL : " + DatabaseError())
+      CloseDatabase(G_DBPostgres) : G_DBPostgres = 0
+      ProcedureReturn #False
+    EndIf
   EndIf
   G_DBPG_DSN = DSN
   ProcedureReturn #True
@@ -55,11 +77,26 @@ EndProcedure
 ; ---------------------------------------------------------------------------
 
 ; Normalise une requete (supprime les commentaires de tete) et verifie
-; qu'elle est en lecture seule. Whitelist : SELECT / SHOW / EXPLAIN /
-; DESCRIBE, et WITH uniquement si aucun mot-clef d'ecriture n'y figure.
+; qu'elle est en lecture seule. Whitelist : SELECT / SHOW / DESCRIBE,
+; et WITH uniquement si aucun mot-clef d'ecriture n'y figure.
+; Notes :
+;  - tout ';' est refuse (fail-closed) : PostgreSQL executerait les
+;    requetes empilees ("SELECT 1; DROP TABLE x") ; SQLite n'en compile
+;    qu'une, mais la divergence entre moteurs est inacceptable ;
+;  - EXPLAIN est exclu de la whitelist : "EXPLAIN ANALYZE DELETE" execute
+;    reellement le DML sur PostgreSQL. L'outil db_explain construit
+;    lui-meme son EXPLAIN QUERY PLAN sur une requete deja validee.
+; La lecture seule est aussi appliquee par le moteur (PRAGMA query_only /
+; default_transaction_read_only, voir DbOpenSQLite/DbOpenPostgres) : meme
+; un bug futur de ce garde applicatif ne permet plus d'ecrire.
 Procedure.i IsReadOnlyQuery(Query.s)
   Protected Q.s = Trim(Query)
   If Q = "" : ProcedureReturn #False : EndIf
+
+  ; Fail-closed : un point-virgule, meme dans un commentaire ou un
+  ; littéral, rend la requete refusee (les consultations legitimes n'en
+  ; ont pas besoin).
+  If FindString(Q, ";") > 0 : ProcedureReturn #False : EndIf
 
   ; Supprimer les commentaires de debut (-- ligne, /* bloc */)
   While #True
@@ -80,7 +117,7 @@ Procedure.i IsReadOnlyQuery(Query.s)
   Protected FirstWord.s = Trim(StringField(U, 1, " "))
   Protected FirstChars.s = Left(U, 8)
 
-  If FirstWord = "SELECT" Or FirstWord = "SHOW" Or FirstWord = "EXPLAIN" Or FirstWord = "DESCRIBE"
+  If FirstWord = "SELECT" Or FirstWord = "SHOW" Or FirstWord = "DESCRIBE"
     ProcedureReturn #True
   EndIf
   If FirstWord = "WITH"

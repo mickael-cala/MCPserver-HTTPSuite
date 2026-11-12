@@ -36,7 +36,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from mcp_client import MCPTestClient
+from mcp_client import MCPTestClient, MCPError
 
 ROOT_SECRET = "test-secret-123"
 
@@ -89,9 +89,9 @@ def run_checks_filemcp(client, root):
     expected = {
         "list_files", "read_file", "read_file_lines", "write_file",
         "create_directory", "delete_file", "move_file", "get_file_info",
-        "search_files", "change_root",
+        "search_files", "change_root", "exec",
     }
-    check("tools/list retourne 10 outils", len(names) == 10, f"obtenu: {names}")
+    check("tools/list retourne 11 outils", len(names) == 11, f"obtenu: {names}")
     check("catalogue conforme", set(names) == expected, f"diff: {set(names) ^ expected}")
 
     print("\n== fileMCP : write_file / read_file ==")
@@ -173,6 +173,35 @@ def run_checks_filemcp(client, root):
     err, text = client.tool_text("read_file", {"path": "rename.txt"})
     check("fichier supprime illisible", err, text)
 
+    print("\n== fileMCP : exec (confirmation requise) ==")
+    err, text = client.tool_text("exec", {"command": "echo ne_doit_pas_passer"})
+    check("exec sans confirm -> refus", err and "non confirmee" in text, text[:120])
+
+    err, text = client.tool_text("exec", {"command": "echo x", "commands": ["echo y"], "confirm": True})
+    check("exec command+commands -> refus", err, text[:120])
+
+    err, text = client.tool_text("exec", {"command": "", "confirm": True})
+    check("exec commande vide -> refus", err, text[:120])
+
+    err, text = client.tool_text("exec", {"command": "echo filemcp_exec_ok", "confirm": True})
+    check("exec echo ok", not err and "filemcp_exec_ok" in text and "Code de sortie : 0" in text, text[:200])
+
+    err, text = client.tool_text("exec", {"commands": ["echo lot_a", "echo lot_b"], "confirm": True})
+    check("exec lot (2 commandes)", not err and "lot_a" in text and "lot_b" in text, text[:200])
+
+    if os.name == "nt":
+        fail_cmd, slow_cmd = "cmd /c exit 42", "ping -n 4 127.0.0.1"
+    else:
+        fail_cmd, slow_cmd = "exit 42", "sleep 5"
+    err, text = client.tool_text("exec", {"command": fail_cmd, "confirm": True})
+    check("exec code de sortie non nul -> erreur", err and "42" in text, text[:200])
+
+    err, text = client.tool_text("exec", {"command": "echo w", "workdir": str(Path.home()), "confirm": True})
+    check("exec workdir hors racine -> refus", err, text[:120])
+
+    err, text = client.tool_text("exec", {"command": slow_cmd, "confirm": True, "timeoutMs": 1000})
+    check("exec timeout -> interrompue", err and "timeout" in text, text[:200])
+
 
 # ---------------------------------------------------------------------------
 # Suite MCP-SequentialThinking-PB
@@ -226,6 +255,12 @@ def run_tests_fetch():
 
         err, text = client.tool_text("fetch", {"url": "http://foo.localhost:9/"})
         check("hostname resolu vers loopback refuse", err, text[:120])
+
+        err, text = client.tool_text("fetch", {"url": "http://example.com:6379/"})
+        check("port non standard refuse", err and "port non autorise" in text, text[:120])
+
+        err, text = client.tool_text("fetch", {"url": "http://example.com/\nX-Injected: 1"})
+        check("URL avec caractere de controle refusee", err and "caractere de controle" in text, text[:120])
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +327,29 @@ def run_checks_memory(client):
         {"from": "Inconnu", "to": "Bob", "relationType": "x"},
     ]})
     check("relation sur entite inconnue refusee", err, text[:120])
+
+    print("\n== Memory : jokers LIKE et bornes d'entrees (audit I4/I5) ==")
+    err, text = client.tool_text("create_entities", {"entities": [
+        {"name": "a_b", "entityType": "t", "observations": []},
+        {"name": "aXb", "entityType": "t", "observations": []},
+    ]})
+    check("entites a_b / aXb creees", not err, text[:120])
+
+    err, text = client.tool_text("search_nodes", {"query": "a_b"})
+    check("search a_b -> joker _ echappe (aXb exclu)", not err and "a_b" in text and "aXb" not in text, text[:160])
+
+    err, text = client.tool_text("search_nodes", {"query": "%"})
+    check("search % -> ne matche rien (pas de scan complet)", not err and '"entities":[]' in text.replace(" ", ""), text[:160])
+
+    err, text = client.tool_text("create_entities", {"entities": [
+        {"name": "x" * 300, "entityType": "t", "observations": []},
+    ]})
+    check("nom d'entite trop long refuse", err and "depasse" in text, text[:120])
+
+    err, text = client.tool_text("add_observations", {"observations": [
+        {"entityName": "Alice", "contents": ["y" * 200000]},
+    ]})
+    check("observation trop longue refusee", err and "depasse" in text, text[:120])
 
     err, text = client.tool_text("add_observations", {"observations": [
         {"entityName": "Fantome", "contents": ["x"]},
@@ -372,6 +430,10 @@ def run_checks_database(client):
     check("DROP refuse", err, text[:100])
     err, text = client.tool_text("db_execute_query", {"query": "WITH x AS (SELECT 1) DELETE FROM t"})
     check("CTE avec DELETE refuse", err, text[:100])
+    err, text = client.tool_text("db_execute_query", {"query": "SELECT 1; DROP TABLE users"})
+    check("stacked queries refusee (point-virgule)", err and "ecriture refusee" in text, text[:100])
+    err, text = client.tool_text("db_execute_query", {"query": "EXPLAIN ANALYZE DELETE FROM users"})
+    check("EXPLAIN avec ecriture refuse", err, text[:100])
 
     print("\n== Database : requetes en lecture ==")
     err, text = client.tool_text("db_execute_query", {"query": "SELECT 1 AS un, 'x' AS t, 2.5 AS f, NULL AS vide"})
@@ -394,6 +456,14 @@ def run_checks_database(client):
 # ---------------------------------------------------------------------------
 
 def run_tests_context7():
+    # Audit I6 : base API a schema detourne -> demarrage refuse.
+    refused = False
+    try:
+        MCPTestClient(find_binary("context7MCP"), env={"MCP_CONTEXT7_API_BASE": "file:///etc/passwd"})
+    except MCPError:
+        refused = True
+    check("API_BASE file:// -> demarrage refuse (context7)", refused, "")
+
     with MCPTestClient(find_binary("context7MCP")) as client:
         run_checks_context7(client)
 
@@ -517,6 +587,8 @@ def run_checks_git(client, repo):
     check("repoPath injecte rejete", err, text[:120])
     err, text = client.tool_text("git_diff", {"repoPath": repo, "refA": "HEAD; touch x", "refB": "HEAD"})
     check("ref injectee rejetee", err, text[:120])
+    err, text = client.tool_text("git_diff", {"repoPath": repo, "refA": "HEAD%APPDATA%", "refB": "HEAD"})
+    check("ref avec % rejetee (expansion cmd)", err, text[:120])
     err, text = client.tool_text("git_log", {"repoPath": repo + "_absent", "count": 1})
     check("depot inexistant -> erreur", err, text[:120])
 
@@ -530,6 +602,16 @@ def run_tests_github():
     mock = MockGitHub()
     base = mock.start()
     try:
+        # Audit I6 : une base API avec un schema detourne (file://...) doit
+        # empecher le demarrage — la cle Authorization ne part jamais la.
+        refused = False
+        try:
+            MCPTestClient(find_binary("githubMCP"),
+                          env={"MCP_GITHUB_TOKEN": "t", "MCP_GITHUB_API_BASE": "file:///etc/passwd"})
+        except MCPError:
+            refused = True
+        check("API_BASE file:// -> demarrage refuse", refused, "")
+
         env = {"MCP_GITHUB_TOKEN": "ghp_test_token", "MCP_GITHUB_API_BASE": base}
         with MCPTestClient(find_binary("githubMCP"), env=env) as client:
             run_checks_github(client)
@@ -626,6 +708,23 @@ def run_checks_github(client):
 # ---------------------------------------------------------------------------
 # Suite transport HTTP (JSON par defaut, SSE optionnel)
 # ---------------------------------------------------------------------------
+
+def raw_request_text(host, port, request_text, timeout=5):
+    """Envoie une requete HTTP brute (socket) et retourne (ligne de statut, en-tetes)."""
+    payload = request_text.encode("ascii") if isinstance(request_text, str) else request_text
+    with socket.create_connection((host, port), timeout=timeout) as s:
+        s.settimeout(timeout)
+        s.sendall(payload)
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    head = data.split(b"\r\n\r\n", 1)[0].decode("latin-1")
+    lines = head.split("\r\n")
+    return (lines[0] if lines else ""), head
+
 
 def read_sse_headers(client, timeout=3):
     """Ouvre GET /mcp en SSE et retourne (socket, en-tetes brutes)."""
@@ -732,12 +831,74 @@ def run_tests_transport():
                   status == 400 and (resp.get("error") or {}).get("code") == -32600,
                   f"status={status}, {resp}")
 
+            print("\n== Transport : protection DNS rebinding (Host) ==")
+            ping_body = b'{"jsonrpc":"2.0","id":50,"method":"ping"}'
+            evil_req = (
+                "POST /mcp HTTP/1.1\r\n"
+                "Host: pirate.example:6666\r\n"
+                "Content-Type: application/json\r\n"
+                f"Content-Length: {len(ping_body)}\r\n\r\n"
+            ).encode("ascii") + ping_body
+            status_line, _ = raw_request_text(client.host, client.port, evil_req)
+            check("POST Host pirate -> 403", "403" in status_line, status_line)
+
+            sse_req = (
+                "GET /mcp HTTP/1.1\r\n"
+                "Host: pirate.example:6666\r\n"
+                "Accept: text/event-stream\r\n\r\n"
+            )
+            status_line, _ = raw_request_text(client.host, client.port, sse_req)
+            check("GET Host pirate -> 403", "403" in status_line, status_line)
+
+            nohost_req = (
+                "POST /mcp HTTP/1.1\r\n"
+                "Content-Type: application/json\r\n"
+                f"Content-Length: {len(ping_body)}\r\n\r\n"
+            ).encode("ascii") + ping_body
+            status_line, _ = raw_request_text(client.host, client.port, nohost_req)
+            check("sans Host (HTTP/1.0 legacy) -> 200", "200" in status_line, status_line)
+
+            print("\n== Transport : anti brute-force et debit (niveau 2) ==")
+            with MCPTestClient(
+                find_binary("fileMCP"),
+                env={"MCP_ROOT": tmp, "MCP_ROOT_SECRET": ROOT_SECRET,
+                     "MCP_HTTP_AUTH_LOCKOUT": "3", "MCP_HTTP_TOKEN": "vrai-jeton"},
+            ) as client_lock:
+                for _ in range(3):
+                    status, _, _ = client_lock.raw_request(
+                        "POST", "/mcp",
+                        body=b'{"jsonrpc":"2.0","id":1,"method":"ping"}',
+                        headers={"Content-Type": "application/json",
+                                 "Authorization": "Bearer mauvais-jeton"})
+                status, _, _ = client_lock.raw_request(
+                    "POST", "/mcp",
+                    body=b'{"jsonrpc":"2.0","id":2,"method":"ping"}',
+                    headers={"Content-Type": "application/json"})
+                check("3 echecs d'auth -> /mcp bloque (429)", status == 429,
+                      f"status={status}")
+
+            with MCPTestClient(
+                find_binary("fileMCP"),
+                env={"MCP_ROOT": tmp, "MCP_ROOT_SECRET": ROOT_SECRET,
+                     "MCP_HTTP_RATE_LIMIT": "4"},
+            ) as client_rate:
+                codes = []
+                for _ in range(6):
+                    status, _, _ = client_rate.raw_request(
+                        "POST", "/mcp",
+                        body=b'{"jsonrpc":"2.0","id":1,"method":"ping"}',
+                        headers={"Content-Type": "application/json"})
+                    codes.append(status)
+                check("rate limit -> 429 apres le plafond (2 premiers 200)",
+                      429 in codes and codes[0] == 200 and codes[1] == 200,
+                      str(codes))
+
             huge = (b'{"jsonrpc":"2.0","id":1,"method":"ping","pad":"'
                     + b"x" * (1024 * 1024) + b'"}')
             status, body, _ = client.post_raw(
                 huge, headers={"Content-Type": "application/json"})
             check("corps > 1 Mio -> 413", status == 413, f"status={status}")
-            check("serveur vivant apres 413", len(client.list_tools()) == 10)
+            check("serveur vivant apres 413", len(client.list_tools()) == 11)
 
             status, body, _ = client.raw_request(
                 "POST", "/mcp",

@@ -5,7 +5,7 @@
 ;  Toutes les commandes passent par GitRun() qui execute git en sous-
 ;  processus avec repertoire de travail controle. Les parametres issus de
 ;  l'appel (chemins, refs) sont valides par GitSafeParam() : tout caractere
-;  dangereux (; & | < > ` $ ( ) " ' retours ligne) provoque le rejet de
+;  dangereux (; & | < > ` $ ( ) % " ' retours ligne) provoque le rejet de
 ;  la requete AVANT execution.
 ; ============================================================================
 
@@ -24,6 +24,11 @@ EndStructure
 ; ---------------------------------------------------------------------------
 
 ; Parametre autorise ? (anti-injection : rejette les metacaracteres shell)
+; Le % est interdit : cmd.exe developpe les variables d'environnement
+; (%APPDATA%...) meme entre guillemets, et une valeur expandue peut
+; transporter des metacaracteres absents de la saisie. ^ et ! restent
+; autorises : inertes entre guillemets (le delayed expansion de cmd est
+; desactive en cmd /c).
 Procedure.i GitSafeParam(S.s)
   If S = "" : ProcedureReturn #True : EndIf   ; vide = parametre optionnel absent
   If FindString(S, ";") > 0 Or FindString(S, "&") > 0 Or FindString(S, "|") > 0
@@ -32,7 +37,7 @@ Procedure.i GitSafeParam(S.s)
   If FindString(S, "<") > 0 Or FindString(S, ">") > 0 Or FindString(S, "`") > 0
     ProcedureReturn #False
   EndIf
-  If FindString(S, "$") > 0 Or FindString(S, "(") > 0 Or FindString(S, ")") > 0
+  If FindString(S, "$") > 0 Or FindString(S, "%") > 0 Or FindString(S, "(") > 0 Or FindString(S, ")") > 0
     ProcedureReturn #False
   EndIf
   If FindString(S, Chr(34)) > 0 Or FindString(S, "'") > 0

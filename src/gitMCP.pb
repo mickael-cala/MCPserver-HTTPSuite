@@ -22,7 +22,7 @@ IncludeFile "git_core.pbi"
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "GitMCPServer-PureBasic"
-G_ServerVersion = "2.0.0"
+G_ServerVersion = "2.1.0"
 
 If Not CheckRuntime()
   End 1

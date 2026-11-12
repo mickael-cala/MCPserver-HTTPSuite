@@ -20,6 +20,7 @@ Global G_HttpPort.i = 0
 Global G_HttpToken.s = ""
 Global G_HttpMaxBody.i = #HTTP_DEFAULT_MAX_BODY
 Global G_HttpAllowedOrigins.s = ""
+Global G_HttpAllowedHosts.s = ""
 Global G_HttpLogRequests.i = #False
 Global G_HttpLastStatus.i = 0
 Global G_HttpNextTimeoutCheck.i = 0
@@ -28,6 +29,21 @@ Global G_HttpNextSseCheck.i = 0
 Global G_HttpRequestProtocol.s = "2025-03-26"
 Global NewMap G_HttpHeaders.s()
 Global NewMap G_SseClients.s()
+
+; Limitation de debit legere (niveau 2 de durcissement, SECURITY-AUDIT.md) :
+;   - blocage anti brute-force du jeton : apres MCP_HTTP_AUTH_LOCKOUT echecs
+;     d'authentification en 60 s, /mcp est bloque 30 s (actif par defaut,
+;     20 echecs ; 0 = desactive) ;
+;   - plafond global de debit : MCP_HTTP_RATE_LIMIT requetes /mcp par
+;     fenetre de 10 s au-dela desquelles la reponse est 429 (0 = desactive,
+;     opt-in pour les expositions hors loopback).
+Global G_HttpAuthMaxFail.i = 20
+Global G_HttpAuthFailCount.i = 0
+Global G_HttpAuthWindowStart.i = 0
+Global G_HttpAuthLock.i = 0
+Global G_HttpRateMax.i = 0
+Global G_HttpRateCount.i = 0
+Global G_HttpRateWindowStart.i = 0
 
 ; Etat d'une connexion en cours de lecture (requete partielle).
 Structure HttpConnState
@@ -88,6 +104,18 @@ Procedure.i HttpLoadConfig(DefaultPort.i)
   EndIf
 
   G_HttpAllowedOrigins = GetEnvironmentVariable("MCP_HTTP_ALLOWED_ORIGINS")
+  G_HttpAllowedHosts = GetEnvironmentVariable("MCP_HTTP_ALLOWED_HOSTS")
+
+  Protected AuthEnv.s = Trim(GetEnvironmentVariable("MCP_HTTP_AUTH_LOCKOUT"))
+  If AuthEnv <> ""
+    G_HttpAuthMaxFail = Val(AuthEnv)
+    If G_HttpAuthMaxFail < 0 : G_HttpAuthMaxFail = 20 : EndIf
+  EndIf
+  Protected RateEnv.s = Trim(GetEnvironmentVariable("MCP_HTTP_RATE_LIMIT"))
+  If RateEnv <> ""
+    G_HttpRateMax = Val(RateEnv)
+    If G_HttpRateMax < 0 : G_HttpRateMax = 0 : EndIf
+  EndIf
   G_HttpLogRequests = Bool(GetEnvironmentVariable("MCP_HTTP_LOG_REQUESTS") = "1")
   ProcedureReturn #True
 EndProcedure
@@ -114,6 +142,7 @@ Procedure.s HttpStatusText(Status.i)
     Case 413 : ProcedureReturn "Payload Too Large"
     Case 415 : ProcedureReturn "Unsupported Media Type"
     Case 431 : ProcedureReturn "Request Header Fields Too Large"
+    Case 429 : ProcedureReturn "Too Many Requests"
     Case 500 : ProcedureReturn "Internal Server Error"
     Case 501 : ProcedureReturn "Not Implemented"
     Case 503 : ProcedureReturn "Service Unavailable"
@@ -328,32 +357,7 @@ Procedure.i HttpFindHeaderEnd(*Mem, Len.i)
   ProcedureReturn -1
 EndProcedure
 
-; ---------------------------------------------------------------------------
-; Verifications de securite
-; ---------------------------------------------------------------------------
-Procedure.i HttpOriginAllowed(Origin.s)
-  If Origin = "" : ProcedureReturn #True : EndIf
-  Protected O.s = LCase(Trim(Origin))
-  Protected P.s = Str(G_HttpPort)
-  If O = "http://127.0.0.1:" + P Or O = "http://localhost:" + P Or O = "http://[::1]:" + P
-    ProcedureReturn #True
-  EndIf
-  If G_HttpAllowedOrigins <> ""
-    Protected i.i, n.i = CountString(G_HttpAllowedOrigins, ",") + 1, A.s
-    For i = 1 To n
-      A = LCase(Trim(StringField(G_HttpAllowedOrigins, i, ",")))
-      If A <> "" And O = A : ProcedureReturn #True : EndIf
-    Next
-  EndIf
-  ProcedureReturn #False
-EndProcedure
-Procedure.i HttpTokenAllowed(AuthHeader.s)
-  If G_HttpToken = "" : ProcedureReturn #True : EndIf
-  Protected A.s = Trim(AuthHeader)
-  If Len(A) < 8 : ProcedureReturn #False : EndIf
-  If LCase(Left(A, 7)) <> "bearer " : ProcedureReturn #False : EndIf
-  ProcedureReturn Bool(Mid(A, 8) = G_HttpToken)
-EndProcedure
+IncludeFile "http_guard.pbi"
 
 ; ---------------------------------------------------------------------------
 ; Reponses applicatives
@@ -409,7 +413,12 @@ Procedure HttpRoute(Client.i, Method.s, Path.s, Body.s)
       ElseIf Path = "/mcp"
         If Not HttpOriginAllowed(Origin)
           HttpSendError(Client, 403, "Origine non autorisee : " + Origin)
+        ElseIf Not HttpHostAllowed(G_HttpHeaders("host"))
+          HttpSendError(Client, 403, "Host non autorise (protection DNS rebinding) : " + G_HttpHeaders("host"))
+        ElseIf HttpRateLimited()
+          HttpSendError(Client, 429, "Trop de requetes : reessayez plus tard.")
         ElseIf Not HttpTokenAllowed(G_HttpHeaders("authorization"))
+          HttpNoteAuthFailure()
           HttpSendError(Client, 401, "Jeton Bearer requis ou invalide.", "WWW-Authenticate: Bearer" + #CRLF$)
         ElseIf HttpAcceptSse()
           HttpStartSse(Client)
@@ -433,7 +442,16 @@ Procedure HttpRoute(Client.i, Method.s, Path.s, Body.s)
         HttpSendError(Client, 403, "Origine non autorisee : " + Origin)
         ProcedureReturn
       EndIf
+      If Not HttpHostAllowed(G_HttpHeaders("host"))
+        HttpSendError(Client, 403, "Host non autorise (protection DNS rebinding) : " + G_HttpHeaders("host"))
+        ProcedureReturn
+      EndIf
+      If HttpRateLimited()
+        HttpSendError(Client, 429, "Trop de requetes : reessayez plus tard.")
+        ProcedureReturn
+      EndIf
       If Not HttpTokenAllowed(G_HttpHeaders("authorization"))
+        HttpNoteAuthFailure()
         HttpSendError(Client, 401, "Jeton Bearer requis ou invalide.", "WWW-Authenticate: Bearer" + #CRLF$)
         ProcedureReturn
       EndIf

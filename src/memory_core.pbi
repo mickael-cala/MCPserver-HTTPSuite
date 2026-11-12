@@ -12,6 +12,17 @@
 
 Global G_MemDB.i = 0
 
+; Bornes d'entrees (audit I5) : le serveur est mono-thread, un nom de
+; plusieurs Mo ou un tableau de milliers d'elements pousserait memoire et
+; CPU pour tous les clients. Le plafond du corps HTTP (1 Mio defaut) ne
+; suffit pas si l'operateur l'elargit. #MEM_MAX_CONTENT laisse passer les
+; contenus longs legitimes (le test unitaire T1.18 en valide un de 100 Ko)
+; tout en bloquant l'abus a l'echelle du Mo.
+#MEM_MAX_NAME = 256
+#MEM_MAX_TYPE = 128
+#MEM_MAX_CONTENT = 131072
+#MEM_MAX_ITEMS = 100
+
 ; ---------------------------------------------------------------------------
 ; Couche d'acces SQLite
 ; ---------------------------------------------------------------------------
@@ -60,6 +71,16 @@ EndProcedure
 ; Echappe une chaine pour inclusion dans une requete SQL (double les ')
 Procedure.s SqlQuote(S.s)
   ProcedureReturn "'" + ReplaceString(S, "'", "''") + "'"
+EndProcedure
+
+; Echappe les jokers LIKE (audit I4) : % et _ sont des jokers, \ est
+; l'echappement declare via ESCAPE '\' dans la requete. Sinon "%%%" forcerait
+; un scan complet (DoS CPU sur le mono-thread) et "a_b" matcherait "aXb".
+Procedure.s LikeEscape(S.s)
+  S = ReplaceString(S, "\", "\\")
+  S = ReplaceString(S, "%", "\%")
+  S = ReplaceString(S, "_", "\_")
+  ProcedureReturn S
 EndProcedure
 
 Procedure.i EntityExists(Name.s)
@@ -166,6 +187,9 @@ Procedure.s ToolCreateEntities(ArgsObj.i)
   EndIf
 
   Protected n.i = JSONArraySize(Arr), i.i
+  If n > #MEM_MAX_ITEMS
+    ProcedureReturn "Erreur : 'entities' depasse " + Str(#MEM_MAX_ITEMS) + " elements par appel."
+  EndIf
   Protected Created.i = 0, ObsCreated.i = 0
 
   ; Une seule transaction : 100 entites passent de ~900 ms a quelques ms
@@ -184,8 +208,16 @@ Procedure.s ToolCreateEntities(ArgsObj.i)
       DatabaseUpdate(G_MemDB, "ROLLBACK")
       ProcedureReturn "Erreur : 'name' ne peut pas etre vide. " + Str(Created) + " entite(s) creee(s) avant l'echec."
     EndIf
+    If Len(Name) > #MEM_MAX_NAME
+      DatabaseUpdate(G_MemDB, "ROLLBACK")
+      ProcedureReturn "Erreur : 'name' depasse " + Str(#MEM_MAX_NAME) + " caracteres."
+    EndIf
     Protected EType.s = GetArgString(Item, "entityType")
     If EType = "" : EType = "unknown" : EndIf
+    If Len(EType) > #MEM_MAX_TYPE
+      DatabaseUpdate(G_MemDB, "ROLLBACK")
+      ProcedureReturn "Erreur : 'entityType' depasse " + Str(#MEM_MAX_TYPE) + " caracteres."
+    EndIf
 
     ; INSERT OR IGNORE : doublon -> pas d'erreur, pas de duplication
     DatabaseUpdate(G_MemDB, "INSERT OR IGNORE INTO entities (name, entityType) VALUES (" + SqlQuote(Name) + ", " + SqlQuote(EType) + ")")
@@ -201,9 +233,17 @@ Procedure.s ToolCreateEntities(ArgsObj.i)
     Protected ObsArr.i = GetArgArray(Item, "observations")
     If ObsArr And JSONType(ObsArr) = #PB_JSON_Array
       Protected j.i, m.i = JSONArraySize(ObsArr)
+      If m > #MEM_MAX_ITEMS
+        DatabaseUpdate(G_MemDB, "ROLLBACK")
+        ProcedureReturn "Erreur : 'observations' depasse " + Str(#MEM_MAX_ITEMS) + " elements par entite."
+      EndIf
       For j = 0 To m - 1
         Protected OVal.i = GetJSONElement(ObsArr, j)
         If JSONType(OVal) = #PB_JSON_String
+          If Len(GetJSONString(OVal)) > #MEM_MAX_CONTENT
+            DatabaseUpdate(G_MemDB, "ROLLBACK")
+            ProcedureReturn "Erreur : observation depasse " + Str(#MEM_MAX_CONTENT) + " caracteres."
+          EndIf
           DatabaseUpdate(G_MemDB, "INSERT INTO observations (entity_name, content) VALUES (" + SqlQuote(Name) + ", " + SqlQuote(GetJSONString(OVal)) + ")")
           If DatabaseError() = ""
             ObsCreated + 1
@@ -225,6 +265,9 @@ Procedure.s ToolCreateRelations(ArgsObj.i)
   EndIf
 
   Protected n.i = JSONArraySize(Arr), i.i, Created.i = 0
+  If n > #MEM_MAX_ITEMS
+    ProcedureReturn "Erreur : 'relations' depasse " + Str(#MEM_MAX_ITEMS) + " elements par appel."
+  EndIf
   For i = 0 To n - 1
     Protected Item.i = GetJSONElement(Arr, i)
     If JSONType(Item) <> #PB_JSON_Object
@@ -235,6 +278,9 @@ Procedure.s ToolCreateRelations(ArgsObj.i)
     Protected RelType.s = GetArgString(Item, "relationType")
     If From = "" Or Dest = "" Or RelType = ""
       ProcedureReturn "Erreur : 'from', 'to' et 'relationType' sont requis."
+    EndIf
+    If Len(From) > #MEM_MAX_NAME Or Len(Dest) > #MEM_MAX_NAME Or Len(RelType) > #MEM_MAX_NAME
+      ProcedureReturn "Erreur : champs de relation limites a " + Str(#MEM_MAX_NAME) + " caracteres."
     EndIf
     ; Integrite referentielle explicite (message clair au lieu d'une erreur FK)
     If Not EntityExists(From)
@@ -261,6 +307,9 @@ Procedure.s ToolAddObservations(ArgsObj.i)
   EndIf
 
   Protected n.i = JSONArraySize(Arr), i.i, Added.i = 0
+  If n > #MEM_MAX_ITEMS
+    ProcedureReturn "Erreur : 'observations' depasse " + Str(#MEM_MAX_ITEMS) + " elements par appel."
+  EndIf
   For i = 0 To n - 1
     Protected Item.i = GetJSONElement(Arr, i)
     If JSONType(Item) <> #PB_JSON_Object
@@ -273,9 +322,15 @@ Procedure.s ToolAddObservations(ArgsObj.i)
     Protected Contents.i = GetArgArray(Item, "contents")
     If Contents And JSONType(Contents) = #PB_JSON_Array
       Protected j.i, m.i = JSONArraySize(Contents)
+      If m > #MEM_MAX_ITEMS
+        ProcedureReturn "Erreur : 'contents' depasse " + Str(#MEM_MAX_ITEMS) + " elements par entite."
+      EndIf
       For j = 0 To m - 1
         Protected CVal.i = GetJSONElement(Contents, j)
         If JSONType(CVal) = #PB_JSON_String
+          If Len(GetJSONString(CVal)) > #MEM_MAX_CONTENT
+            ProcedureReturn "Erreur : observation depasse " + Str(#MEM_MAX_CONTENT) + " caracteres."
+          EndIf
           DatabaseUpdate(G_MemDB, "INSERT INTO observations (entity_name, content) VALUES (" + SqlQuote(Name) + ", " + SqlQuote(GetJSONString(CVal)) + ")")
           If DatabaseError() = ""
             Added + 1
@@ -379,16 +434,20 @@ Procedure.s ToolReadGraph()
   ProcedureReturn BuildGraphJSON(Names())
 EndProcedure
 
-; search_nodes : query (LIKE insensible a la casse sur nom/type/contenu)
+; search_nodes : query (LIKE insensible a la casse sur nom/type/contenu,
+; jokers % et _ echappes, borne de taille)
 Procedure.s ToolSearchNodes(Query.s)
   If Trim(Query) = ""
     ProcedureReturn "Erreur : 'query' ne peut pas etre vide."
   EndIf
-  Protected Like.s = "'%" + ReplaceString(Query, "'", "''") + "%'"
+  If Len(Query) > #MEM_MAX_NAME
+    ProcedureReturn "Erreur : 'query' depasse " + Str(#MEM_MAX_NAME) + " caracteres."
+  EndIf
+  Protected LikeExpr.s = "'%" + LikeEscape(Query) + "%' ESCAPE " + SqlQuote("\")
 
   NewList Names.s()
   Protected SQL.s = "SELECT DISTINCT e.name FROM entities e LEFT JOIN observations o ON o.entity_name = e.name " +
-                    "WHERE e.name LIKE " + Like + " OR e.entityType LIKE " + Like + " OR o.content LIKE " + Like + " ORDER BY e.name"
+                    "WHERE e.name LIKE " + LikeExpr + " OR e.entityType LIKE " + LikeExpr + " OR o.content LIKE " + LikeExpr + " ORDER BY e.name"
   If DatabaseQuery(G_MemDB, SQL)
     While NextDatabaseRow(G_MemDB)
       AddElement(Names())

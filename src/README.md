@@ -42,7 +42,9 @@ Chaque serveur est un exécutable console autonome. Tous partagent le transport 
 
 **Limites** : lecture unique de **2 Mio** (`read_file`, `read_file_lines`, recherche). Le marqueur de troncature annonce aussi la taille réelle du fichier. Recherche bornée : profondeur 32, 10 000 entrées, 10 s.
 
-**Outils** : `list_files`, `read_file`, `read_file_lines`, `write_file`, `create_directory`, `delete_file`, `move_file`, `get_file_info`, `search_files`, `change_root`.
+**Outils** : `list_files`, `read_file`, `read_file_lines`, `write_file`, `create_directory`, `delete_file`, `move_file`, `get_file_info`, `search_files`, `change_root`, `exec`.
+
+**`exec`** : exécution d'une commande shell (`cmd.exe` sous Windows, `bash`/`sh` sinon) dans un répertoire de travail confiné sous `MCP_ROOT`. **Exige `confirm=true` par commande ou par lot** (`commands`, max 20, un seul shell). Sortie stdout+stderr bornée à 64 Kio ; timeout `timeoutMs` (défaut 10 s, max 60 s) avec arrêt forcé ; code de sortie non nul → `isError`. Le répertoire confiné ne limite pas les effets de la commande.
 
 ## fpcMCP
 

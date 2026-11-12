@@ -4,11 +4,11 @@
 
 | Serveur | Limitations connues |
 |---|---|
-| `fileMCP` | `read_file` tronqué à 20 Ko, `read_file_lines` ≤ 5 Mo, dossiers non vides non supprimés, symlinks/junctions sous la racine refusés |
-| `MCP-Fetch-PB` | conversion HTML→Markdown basique ; pas de JS ; hôtes privés/loopback/ULA/link-local refusés via DNS ; réponse ≤ 2 Mo |
+| `fileMCP` | `read_file`/`read_file_lines` limités à 2 Mio, symlinks/junctions sous la racine refusés, `exec` exige `confirm=true` (sortie 64 Kio, timeout ≤ 60 s) |
+| `MCP-Fetch-PB` | conversion HTML→Markdown basique ; pas de JS ; hôtes privés/loopback/ULA/link-local refusés via DNS ; ports limités à 80 (http) / 443 (https) ; redirections suivies manuellement (≤ 5 sauts, chacun revalidé) ; IP validée épinglée (anti DNS rebinding) ; réponse ≤ 2 Mo |
 | `MCP-SequentialThinking-PB` | état en mémoire (perdu à l'arrêt) ; pas de persistance |
-| `memoryMCP` | une instance écrit à la fois (SQLite, pas de WAL) ; pas de FTS |
-| `dbMCP` | lecture seule par défaut ; PostgreSQL sans binding de paramètres |
+| `memoryMCP` | une instance écrit à la fois (SQLite, pas de WAL) ; pas de FTS ; jokers `%`/`_` de `search_nodes` échappés (recherche littérale) ; bornes d'entrées (≤ 100 items/appel, noms ≤ 256, observations ≤ 128 Kio) |
+| `dbMCP` | lecture seule par défaut (applicative **et** moteur : `PRAGMA query_only` / `default_transaction_read_only`, fixée à l'ouverture) ; `;` refusé ; `EXPLAIN` exclu de la whitelist ; PostgreSQL sans binding de paramètres |
 | `context7MCP` | `query_docs` exige une clé ; hors ligne → erreur explicite |
 | `gitMCP` | sous-processus git requis ; sortie plafonnée à 40 Ko |
 | `githubMCP` | token requis ; écritures via `confirm=true` ; pagination manuelle |
@@ -69,12 +69,20 @@
 
 ## Limitations métier
 
-- **`read_file` tronque au-delà de 20 000 octets** ; utiliser `read_file_lines`
-  pour les gros fichiers (limite 5 Mo).
+- **`read_file`/`read_file_lines` limitent les fichiers à 2 Mio** (troncation
+  annoncée avec la taille réelle pour `read_file`).
 - **Aucune gestion des fichiers binaires** : les extensions exécutables
   (`exe`, `dll`, `so`, `dylib`…) sont refusées par les outils de lecture.
-- **`delete_file` ne supprime que les dossiers vides** ; pas de suppression
-  récursive (voir la roadmap).
+- **`exec` (fileMCP)** : exécution shell exigeant `confirm=true` par commande
+  ou par lot. Le répertoire de travail est confiné sous `MCP_ROOT` mais la
+  commande elle-même peut toucher tout le système (chemins absolus, `cd ..`).
+  Sortie stdout+stderr fusionnée, bornée à 64 Kio (`[... sortie tronquee ...]`) ;
+  timeout `timeoutMs` (défaut 10 s, borné 1–60 s) au-delà duquel le processus
+  est tué ; lot `commands` (≤ 20) exécuté dans **un seul** shell (état partagé
+  entre les commandes) ; code de sortie non nul → `isError: true`. Sous
+  Windows, le script `.cmd` est écrit en ASCII : les accents d'une commande
+  peuvent être dégradés par la page de code de `cmd.exe` (la sortie est lue
+  en UTF-8).
 
 ## Problèmes connus
 
@@ -85,19 +93,23 @@
 - `change_root` avec un secret incorrect renvoie `isError: true` mais le
   texte reste en français non structuré ; les clients doivent tester le
   drapeau, pas le texte.
-- **Validation** : la version 2.0.0 (HTTP) est compilée et testée sous
-  **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, 199 unitaires,
-  21 robustesse/perf, 124 intégration). La validation **macOS** reste à faire.
+- **Validation** : le durcissement sécurité (audit C1-C3/I1-I2, voir
+  SECURITY-AUDIT.md) et l'outil `exec` sont compilés et testés sous
+  **Windows** et **Linux (WSL2 Ubuntu 26.04)** (10/10, **203 unitaires**,
+  21 robustesse/perf, **149 intégration**). Référence 2.0.0 : 124 intégration.
+  La validation **macOS** reste à faire.
 - Aucune CI automatisée (PureBasic sous licence).
 
 ## Résultats des tests
 
-Dernières exécutions de `run_all` (Windows et Linux/WSL2) : **10/10 étapes** — tests
-unitaires 46 + 33 + 37 + 19 + 24 + 40 = **199** réussis (mcp_common, Memory,
+Dernières exécutions de `run_all` (Windows ET Linux/WSL2, incluant `exec` et
+le durcissement sécurité) : **10/10 étapes** — tests
+unitaires 46 + 33 + 41 + 19 + 24 + 40 = **203** réussis (mcp_common, Memory,
 Database, Context7, Git, GitHub), robustesse/performance **21/21**,
-tests d'intégration **124/124** (8 serveurs + transport ; PostgreSQL et
+tests d'intégration **149/149** (8 serveurs + transport ; PostgreSQL et
 Context7 live sont ignorés sans configuration/réseau, GitHub utilise un mock
-local).
+local). Références antérieures : 132/132 (exec seul, Windows), 124/124
+(2.0.0).
 
 ## Comportements documentés
 

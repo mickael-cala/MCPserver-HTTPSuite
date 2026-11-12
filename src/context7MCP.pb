@@ -24,7 +24,7 @@ IncludeFile "context7_core.pbi"
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "Context7MCPServer-PureBasic"
-G_ServerVersion = "2.0.0"
+G_ServerVersion = "2.1.0"
 
 If Not CheckRuntime()
   End 1
@@ -32,7 +32,14 @@ EndIf
 
 Global G_C7BaseEnv.s = GetEnvironmentVariable("MCP_CONTEXT7_API_BASE")
 If G_C7BaseEnv <> ""
-  G_C7ApiBase = G_C7BaseEnv
+  ; Audit I6 : la base est validee — la cle Authorization ne doit partir
+  ; que vers http(s), pas vers file:// ou autre schema detourne.
+  If HttpCheckApiBase(G_C7BaseEnv)
+    G_C7ApiBase = G_C7BaseEnv
+  Else
+    LogError("MCP_CONTEXT7_API_BASE invalide : arret du serveur.")
+    End 1
+  EndIf
 EndIf
 LogDebug("API Context7 : " + G_C7ApiBase)
 

@@ -14,6 +14,10 @@
 Global G_C7ApiKey.s = ""
 Global G_C7ApiBase.s = "https://context7.com/api/v1"
 
+; Plafond de taille des reponses API (audit I5) : la documentation
+; retournee reste bien en dessous de 8 Mio.
+#C7_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
 ; ---------------------------------------------------------------------------
 ; Mapping des erreurs HTTP en message MCP
 ; ---------------------------------------------------------------------------
@@ -23,6 +27,8 @@ Procedure.s C7HttpErrorText(Status.i, Prefix.s)
       ProcedureReturn Prefix + " : curl est introuvable ou a echoue sur cet OS (necessaire pour les en-tetes HTTP)."
     Case -1
       ProcedureReturn Prefix + " : echec reseau (DNS, connexion ou timeout)."
+    Case -4
+      ProcedureReturn Prefix + " : reponse trop volumineuse (plafond interne)."
     Case 401
       ProcedureReturn Prefix + " : cle API invalide ou manquante (401). Verifier MCP_CONTEXT7_API_KEY (prefixe ctx7sk)."
     Case 403
@@ -54,7 +60,7 @@ Procedure.s ToolResolveLibraryId(Query.s, LibraryType.s)
 
   Protected Url.s = G_C7ApiBase + "/search?query=" + UrlEncodeComponent(Query) + "&libraryType=" + UrlEncodeComponent(LibraryType)
   Protected Status.i
-  Protected Body.s = HttpGetHeaders(Url, "", 15, @Status)
+  Protected Body.s = HttpGetLimited(Url, "", 15, #C7_MAX_RESPONSE_BYTES, @Status)
   If Status <> 200
     Protected Err.s = C7HttpErrorText(Status, "Erreur recherche")
     If Err <> "" : ProcedureReturn Err : EndIf
@@ -120,7 +126,7 @@ Procedure.s ToolQueryDocs(LibraryId.s, Query.s, Tokens.i, Topic.s, MaxLen.i)
   EndIf
 
   Protected Status.i
-  Protected Body.s = HttpGetHeaders(Url, Auth, 20, @Status)
+  Protected Body.s = HttpGetLimited(Url, Auth, 20, #C7_MAX_RESPONSE_BYTES, @Status)
   If Status <> 200
     Protected Err.s = C7HttpErrorText(Status, "Erreur docs")
     If Err <> "" : ProcedureReturn Err : EndIf

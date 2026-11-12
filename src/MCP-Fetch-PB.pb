@@ -19,6 +19,17 @@ IncludeFile "../mcp_common/jsonrpc.pbi"
 IncludeFile "../mcp_common/http_server.pbi"
 
 #FETCH_MAX_BYTES = 2 * 1024 * 1024
+#FETCH_MAX_REDIRECTS = 5
+#FETCH_MAX_URL_LEN = 2048
+
+; Motif du dernier refus de ValidateFetchUrl (serveur mono-thread) : le
+; motif transite par ce global plutot qu'un parametre pointeur, pour rester
+; dans le patron eprouve du depot (cf. G_HttpResponseHeaders).
+Global G_FetchUrlError.s = ""
+; I3 — anti DNS rebinding : premiere IP validee pour l'URL en cours
+; (alimente l'epinglage curl / la verification WinHTTP de mcp_common/http.pbi).
+Global G_FetchLastResolvedIP.s = ""
+Global G_FetchValidatedIP.s = ""
 
 ; ---------------------------------------------------------------------------
 ; Validation d'URL et garde-fous de securite (SSRF)
@@ -176,6 +187,9 @@ Procedure.i HostResolvesToPrivate(Host.s)
   ForEach IPs()
     If IsPrivateIP(IPs()) : ProcedureReturn #True : EndIf
   Next
+  ; I3 : premiere IP publique retenue pour l'epinglage anti-rebinding.
+  FirstElement(IPs())
+  G_FetchLastResolvedIP = IPs()
   ProcedureReturn #False
 EndProcedure
 
@@ -191,27 +205,111 @@ Procedure.i IsValidHost(Host.s)
   ProcedureReturn #True
 EndProcedure
 
+; Valide une URL (anti-SSRF). Retourne l'URL validee ou "" ; en cas de
+; refus, G_FetchUrlError recoit le motif en francais pour l'agent.
 Procedure.s ValidateFetchUrl(Url.s)
+  G_FetchUrlError = ""
   Url = Trim(Url)
-  If Url = "" : ProcedureReturn "" : EndIf
+  If Url = ""
+    G_FetchUrlError = "URL vide ou invalide."
+    ProcedureReturn ""
+  EndIf
+  If Len(Url) > #FETCH_MAX_URL_LEN
+    G_FetchUrlError = "URL trop longue (max " + Str(#FETCH_MAX_URL_LEN) + " caracteres)."
+    ProcedureReturn ""
+  EndIf
+  ; Caracteres de controle interdits : ils peuvent servir a injecter des
+  ; lignes dans le fichier de config curl (mcp_common/http.pbi) ou tromper
+  ; le parsing d'URL.
+  Protected ci.i
+  For ci = 1 To Len(Url)
+    If Asc(Mid(Url, ci, 1)) < 32
+      G_FetchUrlError = "URL avec caractere de controle refusee."
+      ProcedureReturn ""
+    EndIf
+  Next
   Protected Scheme.s = LCase(GetURLPart(Url, #PB_URL_Protocol))
   If Scheme <> "http" And Scheme <> "https"
+    G_FetchUrlError = "schema refuse (http/https uniquement)."
     ProcedureReturn ""
+  EndIf
+  ; Ports restreints : pas de sondage de services internes sur des ports
+  ; non standards (http=80, https=443).
+  Protected Port.s = GetURLPart(Url, #PB_URL_Port)
+  If Port <> ""
+    Protected PortNum.i = Val(Port)
+    If (Scheme = "http" And PortNum <> 80) Or (Scheme = "https" And PortNum <> 443)
+      G_FetchUrlError = "port non autorise (http=80, https=443)."
+      ProcedureReturn ""
+    EndIf
   EndIf
   Protected Host.s = GetURLPart(Url, #PB_URL_Site)
   If Left(Host, 1) = "[" And Right(Host, 1) = "]"
     Host = Mid(Host, 2, Len(Host) - 2)
   EndIf
-  If Host = "" Or Not IsValidHost(Host) Or IsPrivateHost(Host)
+  If Host = "" Or Not IsValidHost(Host)
+    G_FetchUrlError = "hote invalide."
+    ProcedureReturn ""
+  EndIf
+  If IsPrivateHost(Host)
+    G_FetchUrlError = "hote prive/loopback refuse (anti-SSRF)."
     ProcedureReturn ""
   EndIf
   ; Pour un hostname, resoudre et refuser toute IP privee (anti-SSRF).
-  If Not IsIPLiteral(Host)
+  If IsIPLiteral(Host)
+    G_FetchValidatedIP = Host
+  Else
     If HostResolvesToPrivate(Host)
+      G_FetchUrlError = "resolution DNS impossible ou vers une IP privee (anti-SSRF, fail-closed)."
       ProcedureReturn ""
     EndIf
+    G_FetchValidatedIP = G_FetchLastResolvedIP
   EndIf
   ProcedureReturn Url
+EndProcedure
+
+; ---------------------------------------------------------------------------
+; Suivi manuel des redirections (anti-SSRF)
+; ---------------------------------------------------------------------------
+; Les redirections automatiques sont desactivees dans mcp_common/http.pbi
+; (WinHttpSetOption / config curl sans directive location) : une cible 3xx
+; est ici revalidee (schema, hote, DNS, port) avant la requete suivante.
+
+Procedure.i IsRedirectStatus(Status.i)
+  ProcedureReturn Bool(Status = 301 Or Status = 302 Or Status = 303 Or Status = 307 Or Status = 308)
+EndProcedure
+
+; Extrait l'en-tete Name des en-tetes bruts de reponse (lignes CRLF/LF,
+; ligne de statut incluse).
+Procedure.s FetchExtractHeader(RawHeaders.s, Name.s)
+  Protected Line.s, i.i, n.i = CountString(RawHeaders, #LF$) + 1
+  Protected Prefix.s = LCase(Name) + ":"
+  For i = 1 To n
+    Line = Trim(ReplaceString(StringField(RawHeaders, i, #LF$), #CR$, ""))
+    If LCase(Left(Line, Len(Prefix))) = Prefix
+      ProcedureReturn Trim(Mid(Line, Len(Prefix) + 1))
+    EndIf
+  Next
+  ProcedureReturn ""
+EndProcedure
+
+; Resout une cible de redirection par rapport a l'URL courante. Formes
+; gerees : absolue (http://...), protocol-relative (//hote/chemin) et
+; racine-relative (/chemin). Tout le reste -> "" (fail-closed).
+Procedure.s FetchResolveLocation(BaseUrl.s, Location.s)
+  Protected L.s = Trim(Location)
+  If L = "" : ProcedureReturn "" : EndIf
+  Protected Scheme.s = LCase(GetURLPart(BaseUrl, #PB_URL_Protocol))
+  If Left(L, 7) = "http://" Or Left(L, 8) = "https://"
+    ProcedureReturn L
+  EndIf
+  If Left(L, 2) = "//"
+    ProcedureReturn Scheme + ":" + L
+  EndIf
+  If Left(L, 1) = "/"
+    ProcedureReturn Scheme + "://" + GetURLPart(BaseUrl, #PB_URL_Site) + L
+  EndIf
+  ProcedureReturn ""
 EndProcedure
 
 ; ---------------------------------------------------------------------------
@@ -344,17 +442,68 @@ Procedure.s ToolFetch(ArgsObj.i)
 
   Protected SafeUrl.s = ValidateFetchUrl(Url)
   If SafeUrl = ""
-    ProcedureReturn "ERREUR: URL invalide ou hote prive/loopback refuse."
+    ProcedureReturn "ERREUR: " + G_FetchUrlError
   EndIf
 
+  ; Suivi manuel des redirections : chaque saut est revalide par
+  ; ValidateFetchUrl (DNS inclus) avant la requete suivante. Un 302 vers
+  ; une IP privee est refuse, jamais suivi. Chaque requete est en plus
+  ; protegee contre le DNS rebinding (I3) : epinglage de l'IP validee
+  ; (curl) et verification de l'IP reellement connectee (WinHTTP).
   Protected Status.i
-  Protected Html.s = HttpGetMemory(SafeUrl, @Status)
-  If Status = -3
-    ProcedureReturn "ERREUR: reponse trop volumineuse (max " + Str(#FETCH_MAX_BYTES / 1024 / 1024) + " Mo)."
-  EndIf
-  If Status < 200 Or Status >= 300
-    ProcedureReturn "ERREUR: echec HTTP (statut " + Str(Status) + ") pour " + SafeUrl
-  EndIf
+  Protected Html.s = ""
+  Protected FinalUrl.s = SafeUrl
+  Protected Hops.i = 0
+  While #True
+    ; Hostname nu (sans port) pour l'epinglage curl (HOST1) ; [::1] garde
+    ; ses crochets.
+    Protected HostFull.s = GetURLPart(FinalUrl, #PB_URL_Site)
+    Protected BareHost.s = HostFull
+    If Left(HostFull, 1) = "["
+      Protected CloseB.i = FindString(HostFull, "]")
+      If CloseB > 0 : BareHost = Left(HostFull, CloseB) : EndIf
+    Else
+      Protected Colon.i = FindString(HostFull, ":")
+      If Colon > 0 : BareHost = Left(HostFull, Colon - 1) : EndIf
+    EndIf
+    G_HttpVerifyRemoteIp = #True
+    G_HttpConnectToHost = BareHost
+    G_HttpConnectToIp = G_FetchValidatedIP
+    Html = HttpGetMemory(FinalUrl, @Status)
+    G_HttpVerifyRemoteIp = #False
+    G_HttpConnectToHost = ""
+    G_HttpConnectToIp = ""
+    If Status = -5
+      ProcedureReturn "ERREUR: connexion vers une IP privee detectee (anti-SSRF/DNS rebinding)."
+    EndIf
+    If Status = -4
+      ProcedureReturn "ERREUR: reponse trop volumineuse (max " + Str(#FETCH_MAX_BYTES / 1024 / 1024) + " Mo)."
+    EndIf
+    If IsRedirectStatus(Status)
+      If Hops >= #FETCH_MAX_REDIRECTS
+        ProcedureReturn "ERREUR: trop de redirections (max " + Str(#FETCH_MAX_REDIRECTS) + ") pour " + SafeUrl
+      EndIf
+      Hops + 1
+      Protected Loc.s = FetchExtractHeader(G_HttpResponseHeaders, "location")
+      If Loc = ""
+        ProcedureReturn "ERREUR: redirection (statut " + Str(Status) + ") sans entete Location lisible pour " + FinalUrl
+      EndIf
+      Protected NewUrl.s = FetchResolveLocation(FinalUrl, Loc)
+      If NewUrl = ""
+        ProcedureReturn "ERREUR: cible de redirection non resolue : " + Left(Loc, 200)
+      EndIf
+      Protected Checked.s = ValidateFetchUrl(NewUrl)
+      If Checked = ""
+        ProcedureReturn "ERREUR: redirection refusee (" + G_FetchUrlError + ") : " + Left(NewUrl, 200)
+      EndIf
+      FinalUrl = Checked
+      Continue
+    EndIf
+    If Status < 200 Or Status >= 300
+      ProcedureReturn "ERREUR: echec HTTP (statut " + Str(Status) + ") pour " + FinalUrl
+    EndIf
+    Break
+  Wend
   If Html = ""
     ProcedureReturn "ERREUR: contenu vide ou illisible."
   EndIf
@@ -434,7 +583,7 @@ EndProcedure
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "FetchMCPServer-PureBasic"
-G_ServerVersion = "2.0.0"
+G_ServerVersion = "2.1.0"
 *G_ToolHandler = @ToolDispatch()
 *G_CatalogBuilder = @BuildToolsCatalog()
 

@@ -71,7 +71,7 @@ def test_http_robustness():
                 t = time.perf_counter()
                 try:
                     names = client.list_tools()
-                    if len(names) != 10:
+                    if len(names) != 11:
                         errors += 1
                 except Exception:
                     errors += 1
@@ -95,7 +95,7 @@ def test_http_robustness():
             check("T6.3 JSON malforme -> 400 + -32700",
                   status == 400 and (resp.get("error") or {}).get("code") == -32700,
                   f"status={status}, body={body[:120]!r}")
-            check("T6.3 serveur vivant apres erreur", len(client.list_tools()) == 10)
+            check("T6.3 serveur vivant apres erreur", len(client.list_tools()) == 11)
 
             # T6.2 : corps JSON de 1 Mio -> 413, pas de crash
             huge = (b'{"jsonrpc":"2.0","id":1,"method":"ping","pad":"'
@@ -104,7 +104,7 @@ def test_http_robustness():
                 huge, headers={"Content-Type": "application/json"})
             check("T6.2 corps 1 Mio -> 413", status == 413,
                   f"status={status}, body={body[:120]!r}")
-            check("T6.2 serveur vivant apres 413", len(client.list_tools()) == 10)
+            check("T6.2 serveur vivant apres 413", len(client.list_tools()) == 11)
 
         # T6.4 : port deja utilise -> second processus refuse proprement
         with MCPTestClient(binary, env={"MCP_ROOT": tmp},

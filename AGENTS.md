@@ -20,9 +20,9 @@ travaillent sur ce dépôt. **À lire en premier à chaque reprise.**
    build.bat                  # ou ./build.sh : compile les 8 serveurs
    run_all.bat                # ou ./run_all.sh : unitaires + intégration + rapport
    ```
-   Attendu : **10/10 étapes**, **199 tests unitaires**
-   (46+33+37+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
-   et **124/124 tests d'intégration**. Si ce n'est pas le cas, corriger avant
+   Attendu : **10/10 étapes**, **203 tests unitaires**
+   (46+33+41+19+24+40), **21/21 robustesse/performance** (T6.14 conditionnel)
+   et **147/149 tests d'intégration**. Si ce n'est pas le cas, corriger avant
    toute nouvelle fonctionnalité.
 4. **Choisir la suite** : voir [ROADMAP.md](ROADMAP.md). Ne jamais démarrer
    une phase sans avoir vert `run_all`.
@@ -37,8 +37,11 @@ export PBCOMPILER=$HOME/purebasic-demo/purebasic_demo/compilers/pbcompiler
 export PUREBASIC_HOME=$HOME/purebasic-demo/purebasic_demo
 ./build.sh && ./run_all.sh
 ```
-Attendu : 10/10 étapes (199 unitaires, 21 robustesse/perf, 124 intégration).
-Validé sous WSL2 Ubuntu 26.04 le 2026-10-25 : 10/10, 199, 21, 124.
+Attendu : 10/10 étapes (203 unitaires, 21 robustesse/perf, 149 intégration).
+Validé sous Windows ET WSL2 Ubuntu 26.04 le 2026-11-12 (outil `exec` +
+durcissement sécurité C1-C3/I1-I2, voir SECURITY-AUDIT.md) : 10/10, 202, 21,
+140. Références antérieures : Windows 2026-11-12 (exec seul) 10/10, 199, 21,
+132 ; WSL2 2026-10-25 (2.0.0) 10/10, 199, 21, 124.
 Attention : `build/` est partagé avec Windows si le dépôt est sur `/mnt/c` —
 relancer `build.bat` après une validation Linux.
 
@@ -102,7 +105,7 @@ git push                       # uniquement si l'utilisateur le demande
 
 **8 serveurs MCP** écrits en **PureBasic** (sources dans `src/`) :
 
-- `fileMCP.pb` — gestion de fichiers confinée (`MCP_ROOT`/`MCP_ROOT_SECRET`, symlinks/junctions refusés)
+- `fileMCP.pb` — gestion de fichiers confinée (`MCP_ROOT`/`MCP_ROOT_SECRET`, symlinks/junctions refusés) + exécution shell `exec` derrière `confirm=true` (validation humaine par commande ou lot)
 - `MCP-Fetch-PB.pb` — fetch web (HTML → Markdown, anti-SSRF DNS, plafond 2 Mo)
 - `MCP-SequentialThinking-PB.pb` — raisonnement séquentiel
 - `memoryMCP.pb` + `memory_core.pbi` — mémoire SQLite (`MCP_MEMORY_DB`)
@@ -164,7 +167,8 @@ stop_all.bat           # Windows : arrête les 8 serveurs
 ./stop_all.sh          # Linux/macOS : idem
 run_all.bat            # compilation + 6 suites unitaires + robustesse/perf + intégration + report.html
 ./run_all.sh           # idem sous Linux/macOS
-python tests/test_mcp.py [serveur]   # intégration (124 au total ; sous-ensemble si serveur précisé)
+python tests/test_mcp.py [serveur]   # intégration (149 au total ; sous-ensemble si serveur précisé)
+python tools/bump_version.py X.Y.Z   # version des 9 serveurs depuis une source unique (--check : simulation)
 ./clean.sh             # nettoie build/
 ```
 
@@ -213,7 +217,13 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
    - être couvert par un test unitaire (`tests/test_<serveur>.pb`) et/ou
      d'intégration (`tests/test_mcp.py`).
 7. Protections obligatoires : confinement `MCP_ROOT` (fileMCP), écritures SQL
-   derrière `MCP_DB_ALLOW_WRITE`, écritures GitHub derrière `confirm=true`,
+   derrière `MCP_DB_ALLOW_WRITE` **avec lecture seule appliquée par le
+   moteur** (`PRAGMA query_only` / `default_transaction_read_only`, fixée à
+   l'ouverture), écritures GitHub derrière `confirm=true`,
+   exécutions shell fileMCP (`exec`) derrière `confirm=true` (validation
+   humaine par commande ou lot, workdir confiné, timeout, sortie bornée),
+   redirections fetch revalidées saut par saut (jamais automatiques), vérif
+   du header `Host` sur `/mcp` (anti DNS rebinding),
    validation anti-injection (`GitSafeParam`, `GhSafeSegment`).
 8. Ne jamais élargir le périmètre de sécurité sans demande explicite.
 9. Les exécutables vont dans `build/` (gitignoré) — jamais de binaire commité.
@@ -284,6 +294,14 @@ routage et réponses. **Ne pas dupliquer** cette logique dans un serveur.
   liens pour éviter les cycles et les sorties de racine.
 - **RunProgram sous Linux** ne gère pas les guillemets dans les arguments :
   écrire un script temporaire (`git_core.pbi` le fait) ou passer par curl -K.
+- **Paramètre pointeur optionnel (`*P.String = 0`) : piège mémoire.** Passer
+  l'adresse d'une variable `.s` simple à un paramètre `*X.String` avec valeur
+  par défaut corrompt silencieusement des globals distants (observé : le
+  jeton HTTP devenait invalide après un appel). Ne pas dévier du patron
+  éprouvé du dépôt : variable structurée `Msg.String\s` côté appelant +
+  `@Msg`, ou un **global module** quand le serveur est mono-thread
+  (`G_FetchUrlError`, `G_HttpResponseHeaders`). Symptôme : état corrompu
+  seulement après certaines réponses, jamais pendant l'appel.
 - **Fins de ligne** : `.gitattributes` impose LF aux `.sh/.py/.pb/.pbi/.md`
   (un shebang en CRLF casse l'exécution sous WSL) ; `.bat` en CRLF.
 - **IDE/projets** : `.pbi` = module d'inclusion ; un projet IDE est un `.pbp`
@@ -321,16 +339,18 @@ examples/mcp.json                 configuration client HTTP complete (8 serveurs
 examples/qwen-settings.json       configuration Qwen (httpUrl, Streamable HTTP)
 .gitattributes                    fins de ligne (LF scripts/sources, CRLF .bat)
 build.bat/build.sh                compilation des 8 serveurs ; clean.* : nettoyage
+tools/bump_version.py             bump de G_ServerVersion dans tous les src/*.pb
+tools/watchdog_all.bat/.sh         surveillance + relance automatique des serveurs morts
 start_all.bat/.sh                 lancement des 8 serveurs en arriere-plan
 stop_all.bat/.sh                  arret des serveurs
 run_all.bat/run_all.sh            compilation + tests unitaires + integration + rapport
 tests/mcp_client.py               harnais de test externe (client MCP HTTP)
 tests/mock_github.py              mock local de l'API GitHub
-tests/test_mcp.py                 tests d'integration + transport (124 tests)
+tests/test_mcp.py                 tests d'integration + transport (149 tests)
 tests/unit_test.pbi               framework de tests unitaires PureBasic
 tests/test_common.pb              tests unitaires mcp_common (46 tests)
 tests/test_memory.pb              tests unitaires Memory (33 tests)
-tests/test_database.pb            tests unitaires Database (37 tests)
+tests/test_database.pb            tests unitaires Database (41 tests)
 tests/test_context7.pb            tests unitaires Context7 (19 tests)
 tests/test_git.pb                 tests unitaires Git (24 tests)
 tests/test_github.pb              tests unitaires GitHub (40 tests)

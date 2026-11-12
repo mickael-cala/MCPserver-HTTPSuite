@@ -2,6 +2,122 @@
 
 Ce projet suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.1.0] - 2026-11-12
+
+### Sécurité (durcissement semaine 2, audit SECURITY-AUDIT.md)
+- **fetch — épinglage de l'IP validée (I3, DNS rebinding)** : la première
+  IP résolue par la validation est épinglée — côté curl via `connect-to`
+  (la résolution DNS de curl est court-circuitée, SNI et en-tête `Host`
+  conservés), côté WinHTTP via une vérification de l'IP réellement
+  connectée (`WINHTTP_OPTION_CONNECTION_INFO`) : une réponse venant d'une
+  IP privée est jetée (`-5`). Fichiers : `mcp_common/http.pbi`,
+  `src/MCP-Fetch-PB.pb`.
+- **memory — jokers LIKE échappés et bornes d'entrées (I4/I5)** : `%` et
+  `_` de `search_nodes` sont échappés (`ESCAPE '\'`) — `%%%` ne force plus
+  un scan complet et `a_b` ne matche plus `aXb` ; requête bornée à 256
+  caractères ; entités ≤ 100 par appel, noms ≤ 256, types ≤ 128,
+  observations ≤ 128 Kio (les contenus longs légitimes de 100 Ko du test
+  T1.18 restent acceptés). Fichier : `src/memory_core.pbi`.
+- **github/context7 — réponses plafonnées (I5)** : `GH_MAX_RESPONSE_BYTES`
+  (4 Mio) et `C7_MAX_RESPONSE_BYTES` (8 Mio) via `HttpGetLimited`/
+  `HttpPostLimited` ; code unifié `-4` = réponse trop volumineuse.
+  Fichiers : `src/github_core.pbi`, `src/context7_core.pbi`,
+  `mcp_common/http.pbi` (`HttpPostLimited`).
+- **bases d'API validées (I6)** : `MCP_GITHUB_API_BASE` et
+  `MCP_CONTEXT7_API_BASE` n'acceptent plus que http/https (`file://`
+  serait accepté par curl) — démarrage refusé sinon ; avertissement
+  explicite si un secret partirait en HTTP hors loopback
+  (`HttpCheckApiBase`). Fichiers : `mcp_common/http.pbi`, `src/githubMCP.pb`,
+  `src/context7MCP.pb`.
+- **Tests** : intégration 140 → **147** (jokers LIKE, `%` sans résultat,
+  bornes memory ×2, `API_BASE file://` refusé ×2) ; unitaires 202 →
+  **203**. Validé Windows **et** WSL2 Ubuntu 26.04 (10/10, 203, 21, 147).
+
+### Sécurité (niveau 2 + supervision, audit SECURITY-AUDIT.md)
+- **Comparaison à temps constant** : le jeton Bearer (`HttpTokenAllowed`) et
+  le secret `change_root` sont comparés via `HttpConstCompare` (XOR
+  accumulé sur max(longueurs), aucune sortie anticipée) — plus de canal de
+  timing pour deviner un secret caractère par caractère.
+  Fichiers : `mcp_common/http_guard.pbi` (nouveau module, scindé de
+  `http_server.pbi` pour respecter la limite PureBasic Free),
+  `src/fileMCP.pb`.
+- **Limitation de débit et anti brute-force** : après
+  `MCP_HTTP_AUTH_LOCKOUT` (défaut 20) échecs d'authentification en 60 s,
+  `/mcp` répond `429` pendant 30 s ; `MCP_HTTP_RATE_LIMIT` plafonne le
+  débit global de `/mcp` par fenêtres de 10 s (opt-in, `/health` exempt).
+  Fichiers : `mcp_common/http_guard.pbi`, `mcp_common/http_server.pbi`.
+- **Supervision (I8-lite)** : `tools/watchdog_all.bat` /
+  `tools/watchdog_all.sh` relancent automatiquement les serveurs morts
+  (intervalle configurable, hérite de l'environnement de lancement).
+- **Tests** : intégration 147 → **149** (blocage après 3 échecs d'auth →
+  429 ; rate limit → 429 après le plafond).
+
+### Divers
+- **Version depuis une source unique** : `tools/bump_version.py` met à jour
+  `G_ServerVersion` dans tous les serveurs (`--check` pour simuler) ;
+  version appliquée : **2.1.0**.
+
+### Sécurité (durcissement semaine 1, audit SECURITY-AUDIT.md)
+- **fetch — anti-SSRF des redirections (critique C1)** : les redirections
+  automatiques (WinHTTP suivaient 301/302 vers n'importe quel hôte, privé
+  compris) sont désactivées ; le serveur suit les 301/302/303/307/308 à la
+  main (max 5 sauts) en revalidant chaque cible (schéma, hôte, résolution
+  DNS, port). Ports restreints à 80 (http) / 443 (https) ; URLs de plus de
+  2 048 caractères ou contenant des caractères de contrôle refusées ;
+  messages de refus explicites par motif (`G_FetchUrlError`).
+  Fichiers : `mcp_common/http.pbi` (capture des en-têtes de réponse des
+  deux transports, `WinHttpSetOption(WINHTTP_DISABLE_REDIRECTS)`,
+  `curl --dump-header`), `src/MCP-Fetch-PB.pb` (boucle de redirection,
+  `ValidateFetchUrl`).
+- **dbMCP — lecture seule incontestable (critique C2)** : tout `;`
+  (multi-statements, ex. `SELECT 1; DROP TABLE x`) est refusé et `EXPLAIN`
+  est exclu de la whitelist (`EXPLAIN ANALYZE DELETE` exécute le DML sur
+  PostgreSQL) ; la lecture seule est désormais **appliquée par le moteur** à
+  l'ouverture (`PRAGMA query_only=1` SQLite, `default_transaction_read_only
+  =on` PostgreSQL) quand `MCP_DB_ALLOW_WRITE` n'est pas `1` — le mode
+  écriture est fixé au démarrage et ne se bascule plus à chaud. Fichiers :
+  `src/db_core.pbi`, `src/dbMCP.pb`, `tests/test_database.pb` (réécrit en
+  3 phases, 41 tests, dont un INSERT direct au moteur refusé).
+- **curl (Linux/macOS) — secrets et injection (critique C3)** : les
+  fichiers temporaires (config curl contenant `Authorization`, dump
+  d'en-têtes) sont créés avec umask 077 (0600) ; le nom temporaire vérifie
+  l'absence préalable (symlink préplanté) ; `CurlEsc` neutralise LF/CR
+  (injection de directives dans le fichier `-K` via un `\n` d'URL).
+  Fichier : `mcp_common/http.pbi`.
+- **transport — anti DNS rebinding (important I1)** : l'en-tête `Host` est
+  vérifié sur `GET/POST /mcp` (loopback avec/sans port, hôte d'écoute,
+  `MCP_HTTP_ALLOWED_HOSTS`) ; `403` sinon, y compris sans `Origin`. Un
+  navigateur piégé par un domaine re-résolu vers 127.0.0.1 est bloqué.
+  Fichiers : `mcp_common/http_server.pbi`, `README.md` (nouvelle variable).
+- **gitMCP — expansion cmd.exe (important I2)** : `%` interdit dans
+  `GitSafeParam` (cmd.exe développe les variables même entre guillemets) ;
+  `^`/`!` restent autorisés (inertes entre guillemets, delayed expansion
+  désactivée en `cmd /c`). Fichier : `src/git_core.pbi`.
+- **Tests** : intégration 132 → **140** (Host pirate 403 ×2, sans Host 200,
+  port non standard refusé, URL avec contrôle refusée, stacked queries
+  refusée, `EXPLAIN` avec écriture refusé, ref git avec `%` rejetée) ;
+  unitaires 199 → **202** (Database 41, cycle en 3 phases avec preuve du
+  refus moteur). Validé Windows **et** WSL2 Ubuntu 26.04 (10/10, 202, 21,
+  140).
+
+### Ajouté
+
+- **fileMCP : outil `exec`** — exécution d'une commande shell
+  (`cmd.exe` sous Windows, `bash`/`sh` sous Linux/macOS) dans un répertoire
+  de travail confiné sous `MCP_ROOT`. **Une validation humaine par commande
+  ou par lot** : chaque appel doit porter `confirm=true` (motif des écritures
+  githubMCP), les refus sont journalisés sur stderr. Lot de commandes
+  (`commands`, max 20) exécuté dans un seul shell via un script temporaire ;
+  sortie stdout+stderr fusionnée, bornée à 64 Kio avec marqueur de
+  troncature ; timeout `timeoutMs` (défaut 10 s, borne 1–60 s) avec
+  `KillProgram` pour ne pas bloquer le serveur mono-thread ; code de sortie
+  et durée renvoyés ; code non nul → `isError`. Fichiers :
+  `src/fileMCP.pb` (outil + catalogue + dispatch),
+  `tests/test_mcp.py` (8 checks : garde `confirm`, lot, code de sortie,
+  `workdir` hors racine, timeout), `tests/test_robustness.py` (compteurs
+  10→11 outils), `README.md`, `SECURITY.md`, `PLAN.md`, `ERRATA.md`,
+  `AGENTS.md`. Tests : intégration **124 → 132**.
+
 ## [2.0.0] - 2026-10-25
 
 ### Modifié (rupture : transport HTTP JSON + SSE optionnel)

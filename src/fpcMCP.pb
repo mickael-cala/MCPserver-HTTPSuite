@@ -57,7 +57,7 @@ FpcConfigure(FpcRoot, FpcCompiler, TimeoutMs)
 ; Programme principal
 ; ---------------------------------------------------------------------------
 G_ServerName = "FpcMCPServer-PureBasic"
-G_ServerVersion = "2.0.0"
+G_ServerVersion = "2.1.0"
 *G_ToolHandler = @FpcDispatch()
 *G_CatalogBuilder = @FpcBuildCatalog()
 

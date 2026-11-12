@@ -5,8 +5,12 @@ Les 8 serveurs MCP (phases 0 à 8, voir [PLAN.md](PLAN.md)) sont livrés en
 
 ## Court terme
 
-- Publier une release **v2.0.0** avec les binaires **Windows**, **Linux** et
-  **macOS** (si validé) et un `SHA256SUMS`.
+- **Publier la release v2.1.0** : versions bumpées (`tools/bump_version.py`),
+  binaires **Windows/Linux** + `SHA256SUMS` générés — reste le `git tag` +
+  push + attachement GitHub (à la demande). macOS reste à valider.
+- **Valider l'outil `exec` de fileMCP sous Linux/macOS** (validé sous
+  Windows avec `confirm=true`, lot, timeout et confinement du répertoire de
+  travail).
 - **Valider macOS** (le code et `build.sh` sont prêts ; prérequis : `curl`).
 - Ajouter une **CI GitHub Actions** (matrice Windows/Linux) si un runner avec
   PureBasic sous licence devient disponible.
